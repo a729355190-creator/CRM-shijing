@@ -1,4 +1,9 @@
 // 客服线 v3（本月化总览 + 分钟下拉 + 排客改/取消 + 我的数据明细）
+// 「我的排客」个人归属过滤：只返回当前客服本人排的客。
+// 判定优先级：csUserId === u.id（新版排客已存）；历史无 csUserId 的记录归属不明，个人视图不显示。
+window.csMyInvites = function (list, u) {
+  return (list || []).filter(x => x.csUserId && x.csUserId === u.id);
+};
 window.render_cs_overview = async function(page) {
   const u = V6.user;
   page.innerHTML = '<div class="loading">你的数据正在加载中...</div>';
@@ -583,11 +588,12 @@ window.render_cs_invite = async function(page) {
   });
 };
 
-// === 我的排客 ===
+// === 我的排客（仅本人）===
 window.render_cs_invlist = async function(page) {
   const u = V6.user;
   await loadAllData();
-  const inv = (DB.invite || []).filter(x => x.csTeamId === u.teamId)
+  const teamInv = (DB.invite || []).filter(x => x.csTeamId === u.teamId);
+  const inv = window.csMyInvites(teamInv, u)
     .sort((a, b) => (b.arriveTime || '').localeCompare(a.arriveTime || ''));
   const teams = DB.teams || {};
   page.innerHTML = `
