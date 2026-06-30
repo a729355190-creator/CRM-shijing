@@ -443,10 +443,13 @@ window.render_cs_invite = async function(page) {
             <input class="input" id="i_phone" required placeholder="11 位手机号">
           </div>
           <div style="grid-column:1/-1;position:relative">
-            <label style="display:block;font-size:12px;color:var(--ink-soft);margin-bottom:6px">客户微信号/昵称 <span style="color:var(--ink-mute)">（搜企微客户选择，或直接填写）</span></label>
-            <input class="input" id="i_wechat" placeholder="输入微信昵称搜索，或手动填写" autocomplete="off">
+            <label style="display:block;font-size:12px;color:var(--ink-soft);margin-bottom:6px">客户企微 <span style="color:var(--danger)">*</span> <span style="color:var(--ink-mute)">（搜索并选择你名下的企微好友，确保数据精准）</span></label>
+            <input class="input" id="i_wechat" placeholder="输入微信昵称/备注搜索你名下的企微好友…" autocomplete="off">
             <input type="hidden" id="i_external_userid">
+            <input type="hidden" id="i_wx_bound" value="0">
             <div id="i_wx_dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid var(--border,#d9dde3);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);max-height:240px;overflow:auto;margin-top:2px"></div>
+            <div id="i_wx_hint" style="margin-top:6px;font-size:12px;color:var(--ink-mute)">必须从下拉中选择企微好友。搜不到？<a href="javascript:void(0)" id="i_wx_manual" style="color:var(--klein)">手动新建（标记待补绑）</a></div>
+            <div id="i_wx_selected" style="display:none;margin-top:6px;font-size:12px"></div>
           </div>
           <div style="grid-column:1/-1">
             <label style="display:block;font-size:12px;color:var(--ink-soft);margin-bottom:6px">预约到店时间 *</label>
@@ -480,23 +483,47 @@ window.render_cs_invite = async function(page) {
     </div>
   `;
 
-  // ===== 微信号：搜企微客户下拉（搜不到可手填） =====
+  // ===== 客户企微：强制从企微好友下拉选择（搜不到可显式"手动新建·待补绑"） =====
   (function setupWxSearch() {
     const inp = document.getElementById('i_wechat');
     const dd = document.getElementById('i_wx_dropdown');
     const hid = document.getElementById('i_external_userid');
+    const bound = document.getElementById('i_wx_bound');
+    const hint = document.getElementById('i_wx_hint');
+    const selBox = document.getElementById('i_wx_selected');
+    const manualLink = document.getElementById('i_wx_manual');
     let t = null;
+
+    function resetSelection() {
+      hid.value = ''; bound.value = '0';
+      selBox.style.display = 'none'; selBox.innerHTML = '';
+      hint.style.display = 'block';
+    }
+    function markSelected(eid, nm, isManual) {
+      hid.value = eid || '';
+      bound.value = isManual ? 'manual' : '1';
+      selBox.style.display = 'block';
+      selBox.innerHTML = isManual
+        ? `<span class="tag tag-warning">⚠ 手动新建·待补绑企微</span> <span style="color:var(--ink-mute)">${esc(nm || '')}</span>`
+        : `<span class="tag tag-success">✓ 已绑定企微好友</span> <span style="color:var(--ink-mute)">${esc(nm || '')}</span>`;
+      hint.style.display = isManual ? 'block' : 'none';
+    }
+
     inp.addEventListener('input', () => {
-      hid.value = ''; // 改动即清除已选绑定（手填模式）
+      resetSelection();
       clearTimeout(t);
       const q = inp.value.trim();
       if (q.length < 1) { dd.style.display = 'none'; return; }
       t = setTimeout(async () => {
         try {
           const r = await api.get('/api/customer/wecom-search?limit=20&q=' + encodeURIComponent(q));
-          if (!r.ok || !r.mapped) { dd.style.display = 'none'; return; } // 该客服没绑企微→纯手填
+          if (!r.ok) { dd.style.display = 'none'; return; }
+          if (!r.mapped) {
+            dd.innerHTML = '<div style="padding:10px;color:var(--warning);font-size:13px">你的账号尚未绑定企微号，无法搜索企微好友。请联系总部在「客服绑定」配置，或用下方"手动新建"。</div>';
+            dd.style.display = 'block'; return;
+          }
           if (!r.customers.length) {
-            dd.innerHTML = '<div style="padding:10px;color:var(--ink-mute);font-size:13px">未找到，直接手填即可</div>';
+            dd.innerHTML = '<div style="padding:10px;color:var(--ink-mute);font-size:13px">未找到匹配的企微好友。换关键词，或用下方"手动新建·待补绑"。</div>';
             dd.style.display = 'block'; return;
           }
           dd.innerHTML = r.customers.map(c =>
@@ -505,11 +532,22 @@ window.render_cs_invite = async function(page) {
             </div>`).join('');
           dd.style.display = 'block';
           dd.querySelectorAll('.wx-opt').forEach(o => o.onclick = () => {
-            inp.value = o.dataset.nm; hid.value = o.dataset.eid; dd.style.display = 'none';
+            inp.value = o.dataset.nm; dd.style.display = 'none';
+            markSelected(o.dataset.eid, o.dataset.nm, false);
           });
         } catch (e) { dd.style.display = 'none'; }
       }, 300);
     });
+
+    // 手动新建·待补绑：显式确认后才允许，记录标记 needsBind
+    manualLink.onclick = () => {
+      const nm = inp.value.trim();
+      if (!nm) { showToast('请先在上方输入客户微信昵称', 'error'); inp.focus(); return; }
+      if (!confirm('确认手动新建该客户？\n\n该客户未绑定企微好友，会被标记为「待补绑企微」，请尽快在企微加为好友后补绑，以保证数据精准。')) return;
+      dd.style.display = 'none';
+      markSelected('', nm, true);
+    };
+
     document.addEventListener('click', e => { if (!dd.contains(e.target) && e.target !== inp) dd.style.display = 'none'; });
   })();
 
@@ -521,6 +559,8 @@ window.render_cs_invite = async function(page) {
     const phone = document.getElementById('i_phone').value.trim();
     const wechatNickname = document.getElementById('i_wechat').value.trim();
     const externalUserid = document.getElementById('i_external_userid').value.trim();
+    const wxBound = document.getElementById('i_wx_bound').value; // '1'=选了企微好友 'manual'=手动新建待补绑 '0'=未选
+    const needsBind = wxBound === 'manual';
     const aDate = document.getElementById('i_arrive_date').value;
     const aHour = document.getElementById('i_arrive_hour').value;
     const aMin = document.getElementById('i_arrive_min').value;
@@ -530,6 +570,13 @@ window.render_cs_invite = async function(page) {
     if (!name || !phone || !arrive || !storeId) {
       status.style.color = 'var(--danger)';
       status.textContent = '✗ 请填写完整';
+      return;
+    }
+    // 强制：必须选企微好友(wxBound='1') 或 显式手动新建(wxBound='manual')
+    if (wxBound === '0') {
+      status.style.color = 'var(--danger)';
+      status.textContent = '✗ 请从下拉选择客户企微好友（搜不到可点"手动新建·待补绑"）';
+      document.getElementById('i_wechat').focus();
       return;
     }
     btn.disabled = true;
@@ -546,6 +593,7 @@ window.render_cs_invite = async function(page) {
       phone,
       wechatNickname,
       external_userid: externalUserid,
+      needsBind,
       arriveTime: arrive,
       remark,
       status: 'pending',
