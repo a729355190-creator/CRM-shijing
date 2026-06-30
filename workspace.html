@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>仕净内部管理系统</title>
+<link rel="stylesheet" href="/v6-app.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body class="v6-app">
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-brand">
+      <div class="sb-mark">SJ</div>
+      <div>
+        <div class="sb-name">仕净</div>
+        <div class="sb-sub">内部管理系统</div>
+      </div>
+    </div>
+    <nav class="sb-nav" id="sbNav"></nav>
+    <div class="sb-foot">
+      <div class="sb-user" id="sbUser"></div>
+      <button class="sb-logout" onclick="window.v6Logout()">退出登录</button>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="topbar">
+      <button class="hamburger" onclick="document.body.classList.toggle('sb-open')">☰</button>
+      <div class="page-title" id="pageTitle">加载中...</div>
+      <div class="topbar-spacer"></div>
+      <div class="topbar-time" id="topbarTime"></div>
+    </div>
+    <div class="page" id="page"></div>
+  </main>
+</div>
+
+<script>
+// ===== 全局状态 =====
+window.V6 = {
+  user: null,
+  currentModule: null,
+  modules: {},
+};
+
+// ===== 1. 启动：拉当前用户 =====
+async function bootstrap() {
+  try {
+    const r = await fetch('/api/v6/me');
+    const j = await r.json();
+    if (!j.ok) { window.location.href = '/login-v6'; return; }
+    V6.user = j.user;
+    renderShell();
+  } catch (e) {
+    window.location.href = '/login-v6';
+  }
+}
+
+// ===== 2. 角色 → 菜单映射 =====
+const ROLE_MENUS = {
+  hq: [
+    { key: 'overview', label: '总览', icon: '◎' },
+    { key: 'data',     label: '数据看板', icon: '◫' },
+    { key: 'report',   label: '数据报表', icon: '⊞' },
+    { key: 'cs_perf',  label: '客服业绩', icon: '☎' },
+    { key: 'staff',    label: '员工查询', icon: '◇' },
+    { key: 'invite',   label: '全部排客', icon: '◐' },
+    { key: 'customer', label: '客户档案', icon: '👤' },
+    { key: 'funnel',   label: '全链路看板', icon: '📈' },
+    { key: 'fanscheck',label: '加粉核对', icon: '📲' },
+    { key: 'aichat',   label: 'AI 数据助手', icon: '🤖' },
+    { key: 'users',    label: '用户管理', icon: '◈' },
+    { key: 'settings', label: '系统设置', icon: '◊' },
+  ],
+  ad: [
+    { key: 'overview',  label: '总览', icon: '◎' },
+    { key: 'report',    label: '数据报表', icon: '⊞' },
+    { key: 'materials', label: '素材库', icon: '★' },
+    { key: 'discover',  label: '爆款灵感', icon: '◇' },
+    { key: 'channels',  label: '渠道分析', icon: '◫' },
+  ],
+  cs: [
+    { key: 'overview',  label: '总览', icon: '◎' },
+    { key: 'invite',    label: '排客登记', icon: '☎' },
+    { key: 'invlist',   label: '我的排客', icon: '◫' },
+    { key: 'cs_input',  label: '加粉/定金', icon: '◊' },
+    { key: 'cs_list',   label: '我的数据明细', icon: '⊞' },
+    { key: 'funnel',    label: '全链路看板', icon: '📈' },
+    { key: 'scripts',   label: '话术系统', icon: '✎' },
+    { key: 'materials', label: '素材库', icon: '★' },
+    { key: 'upload',    label: '素材上传', icon: '⤴' },
+  ],
+  store: [
+    { key: 'overview', label: '总览', icon: '◎' },
+    { key: 'pending',  label: '待到店', icon: '☎' },
+    { key: 'slotCalendar', label: '排客看板', icon: '⊕' },
+    { key: 'walkin',   label: '到店登记', icon: '✎' },
+    { key: 'customers', label: '客户中心', icon: '👥' },
+    { key: 'records',  label: '服务记录', icon: '⊞' },
+    { key: 'team',     label: '门店详情', icon: '◇' },
+    { key: 'training', label: '顾客演练', icon: '◊' },
+  ],
+};
+
+const ROLE_LABELS = {
+  hq: '总部', ad: '投放', cs: '客服', store: '门店'
+};
+
+// ===== 3. 渲染外壳（侧边栏 + 默认页）=====
+function renderShell() {
+  const u = V6.user;
+  const menu = ROLE_MENUS[u.role] || [];
+
+  // 侧边栏菜单
+  const nav = document.getElementById('sbNav');
+  nav.innerHTML = menu.map(m => `
+    <a href="#${m.key}" class="sb-item" data-key="${m.key}">
+      <span class="sb-icon">${m.icon}</span>
+      <span class="sb-label">${m.label}</span>
+    </a>
+  `).join('');
+
+  // 用户信息
+  const positionLabel = u.position === 'manager' ? ' · 店长' : (u.position === 'staff' ? ' · 店员' : '');
+  document.getElementById('sbUser').innerHTML = `
+    <div class="sb-user-name">${u.realName}</div>
+    <div class="sb-user-role">${ROLE_LABELS[u.role] || u.role}${positionLabel}</div>
+  `;
+
+  // 路由
+  window.addEventListener('hashchange', router);
+  router();
+
+  // 时钟
+  setInterval(updateClock, 1000);
+  updateClock();
+}
+
+function updateClock() {
+  const d = new Date();
+  const t = d.toLocaleString('zh-CN', { weekday: 'short', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  document.getElementById('topbarTime').textContent = t;
+}
+
+// ===== 4. 路由 =====
+function router() {
+  const role = V6.user.role;
+  const menu = ROLE_MENUS[role] || [];
+  let key = (location.hash || '').replace('#', '');
+  if (!key || !menu.find(m => m.key === key)) {
+    key = menu[0] ? menu[0].key : 'overview';
+    if (location.hash !== '#' + key) {
+      location.hash = '#' + key;
+      return;
+    }
+  }
+  // active 高亮
+  document.querySelectorAll('.sb-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.key === key);
+  });
+  // 标题
+  const m = menu.find(x => x.key === key);
+  document.getElementById('pageTitle').textContent = m ? m.label : '';
+  V6.currentModule = key;
+  // 渲染对应模块
+  document.body.classList.remove('sb-open'); // 移动端点菜单后关闭抽屉
+  renderModule(role, key);
+}
+
+// ===== 5. 模块渲染 =====
+async function renderModule(role, key) {
+  const page = document.getElementById('page');
+  page.innerHTML = '<div class="loading">加载中，请稍后…</div>';
+  // 用 role + key 找 handler
+  const handlerName = `render_${role}_${key}`;
+  if (typeof window[handlerName] === 'function') {
+    try {
+      await window[handlerName](page);
+    } catch (e) {
+      console.error(e);
+      page.innerHTML = `<div class="card"><h3>加载错误</h3><pre>${e.message}\n${e.stack || ''}</pre></div>`;
+    }
+  } else {
+    // 函数还没注册（脚本仍在加载）→ 仍显示加载中
+    page.innerHTML = `<div class="loading">加载中，请稍后…</div>`;
+  }
+}
+
+window.v6Logout = async function() {
+  if (!confirm('确定退出登录吗？')) return;
+  await fetch('/api/v6/logout', { method: 'POST' });
+  window.location.href = '/login-v6';
+};
+
+bootstrap();
+</script>
+
+<!-- 模块脚本（每个角色独立的 handlers） -->
+<script src="/v6-modules/common.js"></script>
+<script src="/v6-modules/hq.js"></script>
+<script src="/v6-modules/ad.js"></script>
+<script src="/v6-modules/cs.js"></script>
+<script src="/v6-modules/store.js"></script>
+<script src="/v6-modules/slotcalendar.js"></script>
+<script src="/v6-modules/aichat.js"></script>
+<script src="/v6-modules/aireport.js"></script>
+</body>
+</html>

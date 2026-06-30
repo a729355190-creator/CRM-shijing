@@ -1,0 +1,247 @@
+{
+  "date": "2026-06-27",
+  "generatedAt": 1782663095161,
+  "threshold": {
+    "deviate": 0.1,
+    "window": 7,
+    "minDays": 3
+  },
+  "ad": {
+    "total": {
+      "cost": 5127.22,
+      "addFans": 28,
+      "deepConvert": 5,
+      "deepCost": 1025.44,
+      "convRate": "17.9%"
+    },
+    "byCity": [
+      {
+        "city": "长沙",
+        "cost": 2190.44,
+        "addFans": 12,
+        "deepConvert": 3,
+        "deepCost": 730.15,
+        "convRate": "25%"
+      },
+      {
+        "city": "深圳",
+        "cost": 1608.6,
+        "addFans": 10,
+        "deepConvert": 1,
+        "deepCost": 1608.6,
+        "convRate": "10%"
+      },
+      {
+        "city": "广州",
+        "cost": 720.7,
+        "addFans": 3,
+        "deepConvert": 1,
+        "deepCost": 720.7,
+        "convRate": "33.3%"
+      },
+      {
+        "city": "惠州",
+        "cost": 504.26,
+        "addFans": 3,
+        "deepConvert": 0,
+        "deepCost": null,
+        "convRate": "0%"
+      },
+      {
+        "city": "新界",
+        "cost": 100.58,
+        "addFans": 0,
+        "deepConvert": 0,
+        "deepCost": null,
+        "convRate": "0%"
+      }
+    ]
+  },
+  "cs": {
+    "total": {
+      "depositCount": 4,
+      "depositAmount": 32,
+      "addFans": 14,
+      "convRate": "28.6%"
+    },
+    "byTeam": [
+      {
+        "teamId": "cs_2",
+        "teamName": "cs_2",
+        "depositCount": 4,
+        "depositAmount": 32,
+        "addFans": 14,
+        "convRate": "28.6%"
+      }
+    ]
+  },
+  "store": {
+    "total": {
+      "revenue": 6148,
+      "newGuestArrive": 6,
+      "avgPrice": 1024.67
+    },
+    "byCity": [
+      {
+        "city": "未知",
+        "revenue": 6148,
+        "newGuestArrive": 6,
+        "avgPrice": 1024.67
+      }
+    ]
+  },
+  "anomalies": {
+    "store": [
+      {
+        "id": "未知",
+        "name": "未知",
+        "items": [
+          {
+            "label": "新客到店",
+            "kind": "good",
+            "level": "high",
+            "today": "6人",
+            "base": "4人",
+            "deltaPct": "+44.8%"
+          },
+          {
+            "label": "营业额",
+            "kind": "good",
+            "level": "high",
+            "today": "¥6,148",
+            "base": "¥4,012.86",
+            "deltaPct": "+53.2%"
+          }
+        ]
+      }
+    ],
+    "cs": [
+      {
+        "id": "cs_2",
+        "name": "cs_2",
+        "items": [
+          {
+            "label": "定金数",
+            "kind": "good",
+            "level": "high",
+            "today": "4单",
+            "base": "3单",
+            "deltaPct": "+41.2%"
+          },
+          {
+            "label": "定金金额",
+            "kind": "good",
+            "level": "high",
+            "today": "¥32",
+            "base": "¥22.67",
+            "deltaPct": "+41.2%"
+          },
+          {
+            "label": "定转率",
+            "kind": "good",
+            "level": "high",
+            "today": "28.6%",
+            "base": "16.8%",
+            "deltaPct": "+70.2%"
+          }
+        ]
+      }
+    ],
+    "city": [
+      {
+        "id": "长沙",
+        "name": "长沙",
+        "items": [
+          {
+            "label": "深转率",
+            "kind": "good",
+            "level": "high",
+            "today": "25%",
+            "base": "10.4%",
+            "deltaPct": "+139.7%"
+          }
+        ]
+      },
+      {
+        "id": "深圳",
+        "name": "深圳",
+        "items": [
+          {
+            "label": "高潜成本",
+            "kind": "bad",
+            "level": "high",
+            "today": "¥1,608.6",
+            "base": "¥731.92",
+            "deltaPct": "+119.8%"
+          },
+          {
+            "label": "深转率",
+            "kind": "bad",
+            "level": "mid",
+            "today": "10%",
+            "base": "13.9%",
+            "deltaPct": "-27.9%"
+          }
+        ]
+      },
+      {
+        "id": "广州",
+        "name": "广州",
+        "items": [
+          {
+            "label": "高潜成本",
+            "kind": "bad",
+            "level": "high",
+            "today": "¥720.7",
+            "base": "¥489.88",
+            "deltaPct": "+47.1%"
+          },
+          {
+            "label": "深转率",
+            "kind": "good",
+            "level": "high",
+            "today": "33.3%",
+            "base": "18.3%",
+            "deltaPct": "+81.8%"
+          }
+        ]
+      },
+      {
+        "id": "惠州",
+        "name": "惠州",
+        "items": [
+          {
+            "label": "高潜成交",
+            "kind": "bad",
+            "level": "high",
+            "today": "0个",
+            "base": "—",
+            "deltaPct": "消耗¥504.26但0高潜"
+          },
+          {
+            "label": "深转率",
+            "kind": "bad",
+            "level": "high",
+            "today": "0%",
+            "base": "10.8%",
+            "deltaPct": "-100%"
+          }
+        ]
+      },
+      {
+        "id": "新界",
+        "name": "新界",
+        "items": [
+          {
+            "label": "高潜成交",
+            "kind": "bad",
+            "level": "high",
+            "today": "0个",
+            "base": "—",
+            "deltaPct": "消耗¥100.58但0高潜"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,618 @@
+// 仕净管理系统 v6 - 用户注册审批 + 用户级权限
+// 启动：node server.js  或  pm2 start server.js --name shijing-v6
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const https = require('https');
+const url = require('url');
+const crypto = require('crypto');
+const Database = require('better-sqlite3');
+const cron = require('node-cron');
+
+const PORT = 8788; // v6 独立端口，不影响线上 v5
+const ROOT = __dirname;
+const DB_FILE = path.join(ROOT, 'db', 'shijing-v6.db'); // v6 独立数据库
+
+// ========== 数据库初始化 ==========
+fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
+const db = new Database(DB_FILE);
+db.pragma('journal_mode = WAL');
+
+// 业务表
+const COLLECTIONS = ['ad', 'cs', 'store', 'invite'];
+for (const c of COLLECTIONS) {
+  db.exec(`CREATE TABLE IF NOT EXISTS shijing_${c} (
+    id TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    deleted INTEGER DEFAULT 0,
+    deletedAt INTEGER,
+    createdAt INTEGER DEFAULT (strftime('%s','now')*1000)
+  )`);
+}
+db.exec(`CREATE TABLE IF NOT EXISTS shijing_config (
+  id TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  updatedAt INTEGER DEFAULT (strftime('%s','now')*1000)
+)`);
+
+// ========== v6 新增：用户表 ==========
+db.exec(`CREATE TABLE IF NOT EXISTS shijing_users (
+  id TEXT PRIMARY KEY,
+  username TEXT UNIQUE NOT NULL,
+  passwordHash TEXT NOT NULL,
+  realName TEXT,
+  role TEXT NOT NULL,           -- ad / cs / store / hq
+  teamId TEXT NOT NULL,         -- ad_1 / cs_2 / store_3 等
+  status TEXT DEFAULT 'pending',-- pending / approved / rejected / disabled
+  token TEXT,                   -- 登录 token
+  tokenExpire INTEGER,
+  createdAt INTEGER DEFAULT (strftime('%s','now')*1000),
+  approvedAt INTEGER,
+  approvedBy TEXT,
+  rejectReason TEXT
+)`);
+
+// ========== 工具函数 ==========
+function pushWecom(webhook, content) {
+  return new Promise(resolve => {
+    if (!webhook) return resolve({ errcode: -1, errmsg: 'no webhook' });
+    const data = JSON.stringify({ msgtype: 'markdown', markdown: { content } });
+    const u = url.parse(webhook);
+    const req = https.request({
+      hostname: u.hostname, path: u.path, method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+    }, res => {
+      let body = ''; res.on('data', c => body += c);
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve({ errcode: -2, errmsg: body }); } });
+    });
+    req.on('error', e => resolve({ errcode: -3, errmsg: e.message }));
+    req.write(data); req.end();
+  });
+}
+
+function getConfig() {
+  const row = db.prepare("SELECT data FROM shijing_config WHERE id='main'").get();
+  return row ? JSON.parse(row.data) : null;
+}
+
+function setConfig(cfg) {
+  const j = JSON.stringify(cfg);
+  db.prepare(`INSERT INTO shijing_config(id, data, updatedAt) VALUES('main', ?, ?)
+    ON CONFLICT(id) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt`)
+    .run(j, Date.now());
+}
+
+// 默认配置（首次启动初始化）
+const DEFAULT_CONFIG = {
+  teams: {
+    ad_1: { name: '营销线1部', role: 'ad', password: 'TF001' },
+    ad_2: { name: '营销线2部', role: 'ad', password: 'TF66' },
+    ad_3: { name: '营销线3部', role: 'ad', password: 'TF88' },
+    cs_1: { name: '客服销售线1部', role: 'cs', password: 'KF001' },
+    cs_2: { name: '客服销售线2部', role: 'cs', password: 'KF66' },
+    cs_3: { name: '客服销售线3部', role: 'cs', password: 'KF88' },
+    store_1: { name: '长沙万达店', role: 'store', password: 'CS001' },
+    store_2: { name: '上海静安店', role: 'store', password: 'MD001' },
+    store_3: { name: '上海闵行店', role: 'store', password: 'MD002' },
+    store_4: { name: '上海浦东店', role: 'store', password: 'MD003' },
+    hq: { name: '总部服务线', role: 'hq', password: 'SJ88' },
+  },
+  wecomConfig: {
+    storeWebhooks: {
+      store_1: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=907e5fad-a397-451c-9702-06b9b52f34fd',
+      store_2: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=907e5fad-a397-451c-9702-06b9b52f34fd',
+      store_3: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=907e5fad-a397-451c-9702-06b9b52f34fd',
+      store_4: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=907e5fad-a397-451c-9702-06b9b52f34fd',
+    },
+    hqWebhook: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=d10d0c20-0c7b-46f3-ab10-ae501ccb1f91',
+    docArchiveUrl: '',
+    reminderHour: 19,
+  },
+  _schema: 'v5_vps',
+};
+if (!getConfig()) setConfig(DEFAULT_CONFIG);
+
+// ========== Express 应用 ==========
+const app = express();
+app.use(express.json({ limit: '5mb' }));
+
+// 静态文件（前端）
+app.use(express.static(path.join(ROOT, 'public')));
+
+// ========== v6 用户系统 ==========
+function hashPwd(pwd) { return crypto.createHash('sha256').update(pwd + '::shijing-salt-v6').digest('hex'); }
+function genToken() { return crypto.randomBytes(24).toString('hex'); }
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+function getUserByToken(token) {
+  if (!token) return null;
+  const u = db.prepare(`SELECT * FROM shijing_users WHERE token=? AND status='approved'`).get(token);
+  if (!u) return null;
+  if (u.tokenExpire && u.tokenExpire < Date.now()) return null;
+  return u;
+}
+
+// 鉴权中间件：必须是已审批通过的用户
+function authRequired(req, res, next) {
+  const token = req.headers['x-token'] || (req.body && req.body._token);
+  const user = getUserByToken(token);
+  if (!user) return res.status(401).json({ ok: false, error: 'not logged in or pending approval' });
+  req.user = user;
+  next();
+}
+
+// 总部专用
+function hqRequired(req, res, next) {
+  const token = req.headers['x-token'] || (req.body && req.body._token);
+  const user = getUserByToken(token);
+  if (!user) return res.status(401).json({ ok: false, error: 'not logged in' });
+  if (user.role !== 'hq') return res.status(403).json({ ok: false, error: 'hq only' });
+  req.user = user;
+  next();
+}
+
+// === 注册 ===
+app.post('/api/register', (req, res) => {
+  const { username, password, realName, role, teamId } = req.body || {};
+  if (!username || !password || !realName || !role || !teamId) return res.json({ ok: false, error: '请填写完整' });
+  if (username.length < 3) return res.json({ ok: false, error: '用户名至少 3 字符' });
+  if (password.length < 4) return res.json({ ok: false, error: '密码至少 4 字符' });
+
+  const cfg = getConfig();
+  if (!cfg.teams[teamId] || cfg.teams[teamId].role !== role) {
+    return res.json({ ok: false, error: '业务线/部门不匹配' });
+  }
+  const exists = db.prepare(`SELECT id FROM shijing_users WHERE username=?`).get(username);
+  if (exists) return res.json({ ok: false, error: '用户名已存在' });
+
+  const id = uid();
+  db.prepare(`INSERT INTO shijing_users(id, username, passwordHash, realName, role, teamId, status)
+    VALUES(?, ?, ?, ?, ?, ?, 'pending')`)
+    .run(id, username, hashPwd(password), realName, role, teamId);
+  res.json({ ok: true, id, message: '注册成功，等待总部审批' });
+});
+
+// === 登录 ===
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.json({ ok: false, error: '请输入用户名和密码' });
+  const u = db.prepare(`SELECT * FROM shijing_users WHERE username=?`).get(username);
+  if (!u) return res.json({ ok: false, error: '用户名或密码错误' });
+  if (u.passwordHash !== hashPwd(password)) return res.json({ ok: false, error: '用户名或密码错误' });
+  if (u.status === 'pending') return res.json({ ok: false, error: '账号待审批，请联系总部' });
+  if (u.status === 'rejected') return res.json({ ok: false, error: '账号被拒绝：' + (u.rejectReason || '未知原因') });
+  if (u.status === 'disabled') return res.json({ ok: false, error: '账号已停用' });
+
+  const token = genToken();
+  const expire = Date.now() + 7 * 86400000; // 7 天
+  db.prepare(`UPDATE shijing_users SET token=?, tokenExpire=? WHERE id=?`).run(token, expire, u.id);
+  const cfg = getConfig();
+  const teamName = (cfg.teams[u.teamId] && cfg.teams[u.teamId].name) || u.teamId;
+  res.json({
+    ok: true,
+    token,
+    user: { id: u.id, username: u.username, realName: u.realName, role: u.role, teamId: u.teamId, teamName },
+  });
+});
+
+// === 退出 ===
+app.post('/api/logout', authRequired, (req, res) => {
+  db.prepare(`UPDATE shijing_users SET token=NULL, tokenExpire=NULL WHERE id=?`).run(req.user.id);
+  res.json({ ok: true });
+});
+
+// === 当前用户信息 ===
+app.post('/api/me', authRequired, (req, res) => {
+  const u = req.user;
+  const cfg = getConfig();
+  const teamName = (cfg.teams[u.teamId] && cfg.teams[u.teamId].name) || u.teamId;
+  res.json({ ok: true, user: { id: u.id, username: u.username, realName: u.realName, role: u.role, teamId: u.teamId, teamName } });
+});
+
+// === 总部：列出待审批 + 全部用户 ===
+app.post('/api/users-list', hqRequired, (req, res) => {
+  const rows = db.prepare(`SELECT id, username, realName, role, teamId, status, createdAt, approvedAt, rejectReason
+    FROM shijing_users ORDER BY createdAt DESC`).all();
+  res.json({ ok: true, users: rows });
+});
+
+// === 总部：审批通过 ===
+app.post('/api/users-approve', hqRequired, (req, res) => {
+  const { id } = req.body || {};
+  if (!id) return res.json({ ok: false, error: 'no id' });
+  db.prepare(`UPDATE shijing_users SET status='approved', approvedAt=?, approvedBy=?, rejectReason=NULL WHERE id=?`)
+    .run(Date.now(), req.user.username, id);
+  res.json({ ok: true });
+});
+
+// === 总部：审批拒绝 ===
+app.post('/api/users-reject', hqRequired, (req, res) => {
+  const { id, reason } = req.body || {};
+  if (!id) return res.json({ ok: false, error: 'no id' });
+  db.prepare(`UPDATE shijing_users SET status='rejected', rejectReason=? WHERE id=?`)
+    .run(reason || '未说明', id);
+  res.json({ ok: true });
+});
+
+// === 总部：停用/启用 ===
+app.post('/api/users-toggle', hqRequired, (req, res) => {
+  const { id, status } = req.body || {};
+  if (!id || !['approved', 'disabled'].includes(status)) return res.json({ ok: false, error: 'bad params' });
+  db.prepare(`UPDATE shijing_users SET status=?, token=NULL WHERE id=?`).run(status, id);
+  res.json({ ok: true });
+});
+
+// === 总部：删除用户 ===
+app.post('/api/users-delete', hqRequired, (req, res) => {
+  const { id } = req.body || {};
+  if (!id) return res.json({ ok: false, error: 'no id' });
+  db.prepare(`DELETE FROM shijing_users WHERE id=?`).run(id);
+  res.json({ ok: true });
+});
+
+// 首次启动时自动创建总部初始账号（用于审批其他用户）
+(function bootstrapHQ() {
+  const has = db.prepare(`SELECT id FROM shijing_users WHERE role='hq' LIMIT 1`).get();
+  if (!has) {
+    db.prepare(`INSERT INTO shijing_users(id, username, passwordHash, realName, role, teamId, status, approvedAt, approvedBy)
+      VALUES(?, 'admin', ?, '总部管理员', 'hq', 'hq', 'approved', ?, 'system')`)
+      .run(uid(), hashPwd('SJ88'), Date.now());
+    console.log('[bootstrap] 已创建初始总部账号: admin / SJ88');
+  }
+})();
+
+function fmtLocalDateFromTs(ts) {
+  const d = new Date(ts || Date.now());
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function userVisibleFromDate(u) {
+  return u && u.role !== 'hq' && /^\d{4}-\d{2}-\d{2}$/.test(String(u.dataVisibleFrom || ''))
+    ? String(u.dataVisibleFrom)
+    : '';
+}
+function recordBizDate(col, x) {
+  if (!x) return '';
+  if (col === 'invite') return String((x.arriveTime || '')).slice(0, 10) || fmtLocalDateFromTs(x.createdAt);
+  return String((x.date || '')).slice(0, 10) || fmtLocalDateFromTs(x.createdAt);
+}
+function filterByVisibleFrom(col, list, u) {
+  const from = userVisibleFromDate(u);
+  if (!from) return list;
+  return list.filter(x => recordBizDate(col, x) >= from);
+}
+
+// ===== API：业务数据 CRUD =====
+app.post('/api/list', authRequired, (req, res) => {
+  const u = req.user;
+  const out = {};
+  for (const c of COLLECTIONS) {
+    const rows = db.prepare(`SELECT data FROM shijing_${c} WHERE deleted = 0`).all();
+    out[c] = rows.map(r => JSON.parse(r.data));
+  }
+  // v6 权限过滤
+  if (u.role === 'hq') {
+    // 总部看全部
+  } else if (u.role === 'ad') {
+    // 营销线：只看自己提交的投放数据；其他表不可见；若配置了 dataVisibleFrom，则不能看加入前历史数据
+    out.ad = filterByVisibleFrom('ad', out.ad.filter(x => x.createdByUserId === u.id), u);
+    out.cs = []; out.store = []; out.invite = [];
+  } else if (u.role === 'cs') {
+    // 客服销售：只看自己提交的定金 + 自己提交的邀约；若配置了 dataVisibleFrom，则不能看加入前历史数据
+    out.ad = [];
+    out.cs = filterByVisibleFrom('cs', out.cs.filter(x => x.createdByUserId === u.id), u);
+    out.invite = filterByVisibleFrom('invite', out.invite.filter(x => x.createdByUserId === u.id), u);
+    out.store = []; // 客服不需要看门店服务记录
+  } else if (u.role === 'store') {
+    // 门店：能看本店的全部数据（不限定个人），但其他业务线不可见；若配置了 dataVisibleFrom，则不能看加入前历史数据
+    out.ad = []; out.cs = [];
+    out.store = filterByVisibleFrom('store', out.store.filter(x => x.teamId === u.teamId), u);
+    out.invite = filterByVisibleFrom('invite', out.invite.filter(x => x.storeTeamId === u.teamId), u);
+  }
+  res.json({ ok: true, data: out, user: {
+    id: u.id, username: u.username, realName: u.realName,
+    role: u.role, teamId: u.teamId, dataVisibleFrom: u.dataVisibleFrom || '',
+  } });
+});
+
+app.post('/api/add', authRequired, (req, res) => {
+  const { collection: col, record } = req.body || {};
+  if (!COLLECTIONS.includes(col) || !record || !record.id) return res.json({ ok: false, error: 'bad params' });
+  // 注入身份信息（用于审计 + 权限过滤）
+  record.createdByUserId = req.user.id;
+  record.createdByUserName = req.user.realName;
+  record.createdByUsername = req.user.username;
+  if (!record.teamId) record.teamId = req.user.teamId;
+  try {
+    db.prepare(`INSERT INTO shijing_${col}(id, data) VALUES(?, ?)`).run(record.id, JSON.stringify(record));
+    res.json({ ok: true });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/update', authRequired, (req, res) => {
+  const { collection: col, id, data } = req.body || {};
+  if (!COLLECTIONS.includes(col) || !id || !data) return res.json({ ok: false, error: 'bad params' });
+  try {
+    const row = db.prepare(`SELECT data FROM shijing_${col} WHERE id=?`).get(id);
+    if (!row) return res.json({ ok: false, error: 'not found' });
+    const orig = JSON.parse(row.data);
+    // 权限：非总部不能改别人的数据（门店例外：可以反馈本店邀约）
+    const u = req.user;
+    if (u.role !== 'hq') {
+      const isOwn = orig.createdByUserId === u.id;
+      const isStoreOwnInvite = u.role === 'store' && col === 'invite' && orig.storeTeamId === u.teamId;
+      if (!isOwn && !isStoreOwnInvite) return res.json({ ok: false, error: '无权修改' });
+    }
+    const merged = Object.assign(orig, data);
+    db.prepare(`UPDATE shijing_${col} SET data=? WHERE id=?`).run(JSON.stringify(merged), id);
+    res.json({ ok: true });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/delete', authRequired, (req, res) => {
+  const { collection: col, id } = req.body || {};
+  if (!COLLECTIONS.includes(col) || !id) return res.json({ ok: false, error: 'bad params' });
+  try {
+    const row = db.prepare(`SELECT data FROM shijing_${col} WHERE id=?`).get(id);
+    if (!row) return res.json({ ok: false, error: 'not found' });
+    const orig = JSON.parse(row.data);
+    const u = req.user;
+    if (u.role !== 'hq') {
+      // 非总部只能删自己的（门店可删本店的）
+      const isOwn = orig.createdByUserId === u.id;
+      const isStoreOwn = u.role === 'store' && orig.teamId === u.teamId;
+      if (!isOwn && !isStoreOwn) return res.json({ ok: false, error: '无权删除' });
+    }
+    db.prepare(`UPDATE shijing_${col} SET deleted=1, deletedAt=? WHERE id=?`).run(Date.now(), id);
+    res.json({ ok: true });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
+// ===== API：配置 =====
+app.get('/api/config', (req, res) => {
+  // 安全：未登录只返回 teams（前端下拉用），敏感字段（webhook/oceanengine）需登录
+  const cfg = getConfig() || {};
+  const hasLegacyToken = req.headers['x-token'] || (req.body && req.body._token);
+  const hasV6Cookie = req.cookies && req.cookies['sj_v6_token'];
+  if (!hasLegacyToken && !hasV6Cookie) {
+    return res.json({ ok: true, config: { teams: cfg.teams || {} } });
+  }
+  res.json({ ok: true, config: cfg });
+});
+
+app.post('/api/config', authRequired, (req, res) => {
+  // 写配置必须登录，且只允许 hq
+  if (req.user && req.user.role !== 'hq') {
+    return res.status(403).json({ ok: false, error: 'hq only' });
+  }
+  const { teams, wecomConfig } = req.body || {};
+  const cfg = getConfig() || DEFAULT_CONFIG;
+  if (teams) cfg.teams = teams;
+  if (wecomConfig) cfg.wecomConfig = wecomConfig;
+  cfg._schema = 'v5_vps';
+  setConfig(cfg);
+  res.json({ ok: true });
+});
+
+// ===== API：企微推送（保护：必须登录，防止被滥用打外部 webhook）=====
+app.post('/api/wecom-push', authRequired, async (req, res) => {
+  const { webhook, content } = req.body || {};
+  if (!webhook || !content) return res.json({ errcode: -1, errmsg: 'missing params' });
+  const r = await pushWecom(webhook, content);
+  res.json(r);
+});
+
+app.post('/api/wecom-push-hq', authRequired, async (req, res) => {
+  const { content } = req.body || {};
+  if (!content) return res.json({ ok: false, error: 'no content' });
+  const cfg = getConfig();
+  const hq = cfg && cfg.wecomConfig && cfg.wecomConfig.hqWebhook;
+  if (!hq) return res.json({ ok: false, error: 'no hq webhook' });
+  const r = await pushWecom(hq, content);
+  res.json({ ok: r.errcode === 0, result: r });
+});
+
+// ===== API：审计 / 数据迁移（仅总部）=====
+app.post('/api/list-deleted', hqRequired, (req, res) => {
+  const out = {};
+  for (const c of COLLECTIONS) {
+    const rows = db.prepare(`SELECT data, deletedAt FROM shijing_${c} WHERE deleted = 1`).all();
+    out[c] = rows.map(r => Object.assign(JSON.parse(r.data), { _deletedAt: r.deletedAt }));
+  }
+  res.json({ ok: true, deleted: out });
+});
+
+app.post('/api/restore', hqRequired, (req, res) => {
+  const { collection: col, id } = req.body || {};
+  if (!COLLECTIONS.includes(col) || !id) return res.json({ ok: false, error: 'bad params' });
+  db.prepare(`UPDATE shijing_${col} SET deleted=0, deletedAt=NULL WHERE id=?`).run(id);
+  res.json({ ok: true });
+});
+
+app.post('/api/import', hqRequired, (req, res) => {
+  // 一键导入：用于把原浏览器 LocalStorage 数据迁过来
+  const data = req.body || {};
+  let total = 0, success = 0, skipped = 0;
+  for (const c of COLLECTIONS) {
+    if (!Array.isArray(data[c])) continue;
+    for (const rec of data[c]) {
+      total++;
+      if (!rec || !rec.id) continue;
+      try {
+        const exists = db.prepare(`SELECT 1 FROM shijing_${c} WHERE id=?`).get(rec.id);
+        if (exists) { skipped++; continue; }
+        db.prepare(`INSERT INTO shijing_${c}(id, data) VALUES(?, ?)`).run(rec.id, JSON.stringify(rec));
+        success++;
+      } catch (e) { /* skip */ }
+    }
+  }
+  res.json({ ok: true, total, success, skipped });
+});
+
+app.post('/api/diagnose', (req, res) => {
+  const counts = {};
+  for (const c of COLLECTIONS) {
+    counts[c] = db.prepare(`SELECT COUNT(*) AS n FROM shijing_${c} WHERE deleted=0`).get().n;
+  }
+  counts.config = db.prepare("SELECT COUNT(*) AS n FROM shijing_config").get().n;
+  res.json({ ok: true, counts, config: getConfig() });
+});
+
+// ========== 每日 9:00 数据简报（cron）==========
+function calcDailyReport(date) {
+  const data = {};
+  for (const c of COLLECTIONS) {
+    const rows = db.prepare(`SELECT data FROM shijing_${c} WHERE deleted=0`).all();
+    data[c] = rows.map(r => JSON.parse(r.data));
+  }
+  const ad = data.ad.filter(x => x.date === date);
+  const cs = data.cs.filter(x => x.date === date);
+  const store = data.store.filter(x => x.date === date);
+  const invite = data.invite.filter(x => (x.arriveTime || '').slice(0, 10) === date);
+
+  const safeDiv = (a, b) => (!b ? 0 : a / b);
+  const fmt = n => '¥' + (Math.round((n || 0) * 100) / 100).toLocaleString('zh-CN');
+  const pct = n => (n || 0).toFixed(1) + '%';
+
+  const adCost = ad.reduce((s, x) => s + (x.cost || 0), 0);
+  const addFans = ad.reduce((s, x) => s + (x.addFans || 0), 0);
+  const depositCount = cs.reduce((s, x) => s + (x.depositCount || 0), 0);
+  const newC = store.filter(x => x.customerType === '新客');
+  const oldC = store.filter(x => x.customerType === '老客');
+  const newArrive = newC.length, oldArrive = oldC.length;
+  const arriveCost = safeDiv(adCost, newArrive);
+  const opCount = newC.filter(x => x.isOperated === '是').length;
+  const closeCount = newC.filter(x => x.isClosed === '是').length;
+  const newRev = newC.reduce((s, x) => s + (x.opAmount||0) + (x.closedAmount||0), 0);
+  const oldRev = oldC.reduce((s, x) => s + (x.opAmount||0) + (x.closedAmount||0), 0);
+  const revenue = newRev + oldRev;
+  const roi = safeDiv(revenue, adCost);
+  const arrived = invite.filter(x => x.status === 'arrived').length;
+  const noShow = invite.filter(x => x.status === 'no_show').length;
+  const pending = invite.filter(x => x.status === 'pending').length;
+
+  return [adCost, addFans, depositCount, newC, oldC, newArrive, oldArrive, arriveCost, opCount, closeCount, newRev, oldRev, revenue, roi, arrived, noShow, pending, invite.length];
+}
+
+async function runDailyReport(date) {
+  const [adCost, addFans, depositCount, newC, oldC, newArrive, oldArrive, arriveCost, opCount, closeCount, newRev, oldRev, revenue, roi, arrived, noShow, pending, totalInvite] = calcDailyReport(date);
+  const cfg = getConfig();
+  const hq = cfg && cfg.wecomConfig && cfg.wecomConfig.hqWebhook;
+  if (!hq) { console.log('[daily-report] no hq webhook'); return; }
+  const fmt = n => '¥' + (Math.round((n || 0) * 100) / 100).toLocaleString('zh-CN');
+  const pct = n => (n || 0).toFixed(1) + '%';
+  const safeDiv = (a, b) => (!b ? 0 : a / b);
+
+  let content;
+  if (adCost === 0 && depositCount === 0 && newArrive + oldArrive === 0 && totalInvite === 0) {
+    content = '## 📊 仕净系统每日数据简报\n' +
+      '> 数据日期：**' + date + '**\n' +
+      '> <font color="warning">该日暂无业务数据录入</font>\n\n' +
+      '请各团队负责人确认是否有数据漏录。';
+  } else {
+    content = '## 📊 仕净系统每日数据简报\n' +
+      '> 数据日期：**' + date + '**\n' +
+      '> 推送时间：' + new Date().toLocaleString('zh-CN') + '\n\n' +
+      '### 💰 营销线\n' +
+      '> 广告消耗：**' + fmt(adCost) + '** | 加粉：**' + addFans + '** 人 | 加粉成本：' + fmt(safeDiv(adCost, addFans)) + '\n\n' +
+      '### 📞 客服销售线\n' +
+      '> 定金数：**' + depositCount + '** 单 | 定金成本：' + fmt(safeDiv(adCost, depositCount)) + '\n\n' +
+      '### 🏪 市场线\n' +
+      '> 新客到店：**' + newArrive + '** 人 | 到店成本：' + fmt(arriveCost) + '\n' +
+      '> 老客到店：**' + oldArrive + '** 人（不计入到店成本）\n' +
+      '> 操作：' + opCount + ' (' + pct(safeDiv(opCount, newArrive)*100) + ') | 成单：' + closeCount + ' (' + pct(safeDiv(closeCount, newArrive)*100) + ')\n\n' +
+      '### 📋 客户邀约\n' +
+      '> 总邀约：' + totalInvite + ' | 已到店：<font color="info">' + arrived + '</font> | 未到店：<font color="warning">' + noShow + '</font> | 待确认：' + pending + '\n\n' +
+      '### 🎯 营业额\n' +
+      '> 新客营业额：**' + fmt(newRev) + '**\n' +
+      '> 老客营业额：**' + fmt(oldRev) + '**\n' +
+      '> 总营业额：<font color="info">**' + fmt(revenue) + '**</font>\n' +
+      '> ROI：**' + roi.toFixed(2) + '**';
+  }
+  const r = await pushWecom(hq, content);
+  console.log('[daily-report]', date, 'pushed:', JSON.stringify(r));
+}
+
+// 每天 9:00（北京时间）跑昨天数据
+cron.schedule('0 9 * * *', () => {
+  const d = new Date(Date.now() - 86400000);
+  const dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  console.log('[cron] daily-report for', dateStr);
+  runDailyReport(dateStr);
+}, { timezone: 'Asia/Shanghai' });
+
+// ========== 每日 9:00 处理预约推送 ==========
+// 客服提前录入的邀约（到店日期是今天，但创建于今天之前）→ 推送门店群
+async function runScheduledArrivalPush() {
+  const today = (() => {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  })();
+  const cfg = getConfig();
+  const storeWebhooks = (cfg && cfg.wecomConfig && cfg.wecomConfig.storeWebhooks) || {};
+  const teams = (cfg && cfg.teams) || {};
+
+  // 找今天到店、状态 pending、未推送的邀约
+  const rows = db.prepare(`SELECT id, data FROM shijing_invite WHERE deleted=0`).all();
+  let pushed = 0;
+  for (const r of rows) {
+    const inv = JSON.parse(r.data);
+    const arriveDate = (inv.arriveTime || '').slice(0, 10);
+    if (arriveDate !== today) continue;
+    if (inv.status !== 'pending') continue;
+    if (inv.notified === true) continue;
+
+    const url = storeWebhooks[inv.storeTeamId];
+    if (!url) { console.log('[scheduled-push] no webhook for', inv.storeTeamId); continue; }
+
+    const content = `## 顾客即将到店通知\n` +
+      `> 客户姓名：<font color="info">${inv.customerName}</font>\n` +
+      `> 客户电话：${inv.phone}\n` +
+      `> 预计到店：**${(inv.arriveTime || '').replace('T', ' ')}**\n` +
+      `> 备注：${inv.remark || '-'}\n\n` +
+      `（此邀约由客服提前 ${Math.max(1, Math.round((Date.now() - inv.createdAt) / 86400000))} 天前录入，今日 09:00 自动推送）\n` +
+      `请市场线老师做好接待准备。`;
+
+    const pr = await pushWecom(url, content);
+    const ok = pr.errcode === 0;
+    inv.notified = ok;
+    inv.scheduledPush = false;
+    inv.scheduledPushedAt = Date.now();
+    db.prepare(`UPDATE shijing_invite SET data=? WHERE id=?`).run(JSON.stringify(inv), inv.id);
+    if (ok) pushed++;
+    console.log('[scheduled-push]', inv.customerName, '→', inv.storeTeamId, ok ? 'OK' : 'FAIL');
+  }
+  console.log('[scheduled-push] done, pushed:', pushed);
+  return pushed;
+}
+
+cron.schedule('0 9 * * *', () => {
+  console.log('[cron] scheduled arrival push');
+  runScheduledArrivalPush();
+}, { timezone: 'Asia/Shanghai' });
+
+// 手动触发接口（备用）
+app.post('/api/scheduled-push', async (req, res) => {
+  const n = await runScheduledArrivalPush();
+  res.json({ ok: true, pushed: n });
+});
+
+// 手动触发接口（备用）
+app.post('/api/daily-report', async (req, res) => {
+  const { date } = req.body || {};
+  const d = date || (() => {
+    const x = new Date(Date.now() - 86400000);
+    return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+  })();
+  await runDailyReport(d);
+  res.json({ ok: true, date: d });
+});
+
+// ========== 启动 ==========
+app.listen(PORT, () => {
+  console.log('🦾 仕净系统已启动 -> http://localhost:' + PORT + '/');
+  console.log('   数据库: ' + DB_FILE);
+  console.log('   每日 9:00 自动推送数据简报 + 处理预约邀约推送');
+});

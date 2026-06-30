@@ -1,0 +1,23 @@
+{
+  "name": "shijing-mgmt",
+  "version": "5.0.0",
+  "description": "Shijing internal management system - VPS edition",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^11.3.0",
+    "compression": "^1.8.1",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.4.2",
+    "express": "^4.19.2",
+    "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.1.1",
+    "node-cron": "^3.0.3",
+    "sharp": "^0.35.2"
+  }
+}

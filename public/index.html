@@ -1,0 +1,2037 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+<title>仕净管理系统 v5.0</title>
+<link rel="icon" href="logo.jpg" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --brand-primary: #1a3a8a;       /* 深海军蓝 */
+    --brand-primary-dark: #0f2456;
+    --brand-accent: #2e5dd6;
+    --brand-silver: #c8d0db;
+    --brand-silver-light: #e8ecf3;
+    --brand-bg: #f4f6fb;
+    --brand-text: #1d2841;
+    --brand-text-soft: #5a6478;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--brand-bg); color: var(--brand-text); }
+  .hidden { display: none !important; }
+
+  /* 登录页 */
+  /* 登录页（高端医美品牌美学）*/
+  .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #0f2456 0%, #1a3a8a 50%, #2e5dd6 100%);
+    position: relative; overflow: hidden; animation: fadeIn 1.2s ease-out;
+  }
+  .login-wrap::before { content: ''; position: absolute; inset: 0; background:
+    radial-gradient(circle at 15% 25%, rgba(255,255,255,.12), transparent 35%),
+    radial-gradient(circle at 85% 75%, rgba(230,119,0,.15), transparent 35%),
+    radial-gradient(circle at 50% 50%, rgba(46,93,214,.2), transparent 50%);
+    pointer-events: none; animation: pulseGlow 8s ease-in-out infinite alternate;
+  }
+  .login-wrap::after { content: ''; position: absolute; top: 0; left: -50%; width: 200%; height: 100%;
+    background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,.03) 50%, transparent 70%);
+    animation: shimmer 15s linear infinite; pointer-events: none;
+  }
+  .login-card { position: relative; background: rgba(255,255,255,.98); padding: 48px 42px; border-radius: 24px;
+    box-shadow: 0 40px 100px rgba(15,36,86,.5), 0 0 0 1px rgba(200,208,219,.6),
+      inset 0 1px 0 rgba(255,255,255,.8);
+    width: 480px; z-index: 1; backdrop-filter: blur(10px);
+    transform: translateY(0) rotateX(0); transition: transform .4s cubic-bezier(.4,0,.2,1);
+    animation: cardEntrance .8s cubic-bezier(.4,0,.2,1) forwards;
+  }
+  .login-card:hover { transform: translateY(-4px) rotateX(2deg); box-shadow: 0 50px 120px rgba(15,36,86,.6); }
+  .brand-block { text-align: center; margin-bottom: 36px; animation: slideDown .6s ease-out .2s both; }
+  .brand-logo { width: 96px; height: 96px; object-fit: contain; margin-bottom: 18px;
+    filter: drop-shadow(0 8px 20px rgba(26,58,138,.4));
+    animation: logoFloat 3s ease-in-out infinite;
+    transition: transform .3s ease;
+  }
+  .brand-logo:hover { transform: scale(1.08) rotate(3deg); }
+  .login-card h1 { font-size: 26px; color: var(--brand-primary); letter-spacing: 4px; margin-bottom: 8px;
+    font-weight: 800; font-family: 'Playfair Display', 'Georgia', serif; text-shadow: 0 1px 2px rgba(26,58,138,.1);
+    animation: slideDown .6s ease-out .3s both;
+  }
+  .login-card .subtitle { color: var(--brand-text-soft); font-size: 13px; letter-spacing: 6px; font-weight: 500;
+    margin-top: 4px; opacity: .85; animation: slideDown .6s ease-out .4s both;
+  }
+  .role-tabs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 24px;
+    animation: slideDown .6s ease-out .5s both;
+  }
+  .role-tab { padding: 14px; border: 2px solid var(--brand-silver); border-radius: 12px; text-align: center;
+    cursor: pointer; transition: all .3s cubic-bezier(.4,0,.2,1); font-size: 14px;
+    background: linear-gradient(135deg, rgba(255,255,255,.9), rgba(248,250,252,.95));
+    color: var(--brand-text-soft); font-weight: 500; position: relative; overflow: hidden;
+  }
+  .role-tab::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg,
+    transparent, rgba(255,255,255,.3)); opacity: 0; transition: opacity .3s; }
+  .role-tab:hover::before { opacity: 1; }
+  .role-tab:hover { border-color: var(--brand-accent); color: var(--brand-primary);
+    transform: translateY(-2px); box-shadow: 0 4px 12px rgba(26,58,138,.15);
+  }
+  .role-tab.active { border-color: var(--brand-primary); background: linear-gradient(135deg,
+    var(--brand-primary), var(--brand-accent));
+    color: #fff; font-weight: 700; box-shadow: 0 8px 20px rgba(26,58,138,.35);
+    transform: translateY(-3px);
+  }
+  .form-group { margin-bottom: 18px; animation: slideDown .6s ease-out calc(.6s + var(--i,0)*.05s) both; }
+  .form-group label { display: block; font-size: 13px; margin-bottom: 8px; color: var(--brand-text-soft);
+    font-weight: 600; letter-spacing: .5px;
+  }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%; padding: 12px 16px; border: 2px solid var(--brand-silver); border-radius: 10px;
+    font-size: 15px; outline: none; transition: all .3s cubic-bezier(.4,0,.2,1);
+    background: linear-gradient(135deg, rgba(255,255,255,.95), rgba(252,254,255,.98));
+    font-family: 'Lato', -apple-system, sans-serif;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    border-color: var(--brand-primary); box-shadow: 0 0 0 4px rgba(26,58,138,.15),
+      0 2px 8px rgba(26,58,138,.1);
+    background: #fff; transform: translateY(-1px);
+  }
+  .btn { width: 100%; padding: 14px; border: none; border-radius: 10px;
+    background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
+    color: #fff; font-size: 16px; cursor: pointer; transition: all .3s cubic-bezier(.4,0,.2,1);
+    letter-spacing: 2px; font-weight: 700; font-family: 'Lato', sans-serif;
+    position: relative; overflow: hidden; animation: slideUp .6s ease-out .7s both;
+  }
+  .btn::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.3), transparent);
+    transition: left .5s;
+  }
+  .btn:hover::before { left: 100%; }
+  .btn:hover { box-shadow: 0 8px 20px rgba(26,58,138,.45); transform: translateY(-2px);
+    letter-spacing: 3px;
+  }
+  .btn:active { transform: translateY(0) scale(.98); }
+  .btn-sm { width: auto; padding: 9px 18px; font-size: 14px; letter-spacing: 1px; border-radius: 8px; }
+  .btn-danger { background: linear-gradient(135deg, #c0392b, #e74c3c); }
+  .btn-success { background: linear-gradient(135deg, #1e7e34, #28a745); }
+  .btn-warning { background: linear-gradient(135deg, #c87f0a, #e6a23c); }
+  
+  /* 动画定义 */
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes cardEntrance { from { opacity: 0; transform: translateY(40px) rotateX(10deg); }
+    to { opacity: 1; transform: translateY(0) rotateX(0); } }
+  @keyframes slideDown { from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); } }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); } }
+  @keyframes logoFloat { 0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); } }
+  @keyframes pulseGlow { 0% { opacity: .6; } 100% { opacity: .9; } }
+  @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+  .role-tabs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 20px; }
+  .role-tab { padding: 12px; border: 1.5px solid var(--brand-silver); border-radius: 8px; text-align: center;
+    cursor: pointer; transition: all .25s; font-size: 13px; background: #fff; color: var(--brand-text-soft);
+  }
+  .role-tab:hover { border-color: var(--brand-accent); color: var(--brand-primary); }
+  .role-tab.active { border-color: var(--brand-primary); background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
+    color: #fff; font-weight: 600; box-shadow: 0 4px 12px rgba(26,58,138,.3);
+  }
+  .form-group { margin-bottom: 16px; }
+  .form-group label { display: block; font-size: 12px; margin-bottom: 6px; color: var(--brand-text-soft); font-weight: 500; }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--brand-silver); border-radius: 6px;
+    font-size: 14px; outline: none; transition: border .2s, box-shadow .2s; background: #fff;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    border-color: var(--brand-primary); box-shadow: 0 0 0 3px rgba(26,58,138,.1);
+  }
+  .btn { width: 100%; padding: 12px; border: none; border-radius: 6px;
+    background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
+    color: #fff; font-size: 15px; cursor: pointer; transition: all .2s; letter-spacing: 1px; font-weight: 500;
+  }
+  .btn:hover { box-shadow: 0 6px 16px rgba(26,58,138,.35); transform: translateY(-1px); }
+  .btn-sm { width: auto; padding: 7px 16px; font-size: 13px; letter-spacing: 0; }
+  .btn-danger { background: linear-gradient(135deg, #c0392b, #e74c3c); }
+  .btn-success { background: linear-gradient(135deg, #1e7e34, #28a745); }
+  .btn-warning { background: linear-gradient(135deg, #c87f0a, #e6a23c); }
+
+  /* 主体框架 */
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar { width: 230px; background: linear-gradient(180deg, var(--brand-primary-dark), var(--brand-primary));
+    color: #fff; padding: 0 0 24px;
+    box-shadow: 2px 0 12px rgba(15,36,86,.15);
+  }
+  .sidebar-brand { display: flex; align-items: center; gap: 12px; padding: 20px 18px;
+    border-bottom: 1px solid rgba(255,255,255,.1); margin-bottom: 12px;
+  }
+  .sidebar-brand img { width: 42px; height: 42px; object-fit: contain;
+    background: rgba(255,255,255,.95); border-radius: 6px; padding: 3px;
+  }
+  .brand-name { font-size: 14px; font-weight: 600; letter-spacing: 1px; }
+  .brand-role { font-size: 11px; opacity: .7; margin-top: 2px; letter-spacing: 2px; }
+  .menu-item { padding: 13px 22px; cursor: pointer; transition: all .2s; font-size: 13.5px;
+    border-left: 3px solid transparent; color: rgba(255,255,255,.85);
+  }
+  .menu-item:hover { background: rgba(255,255,255,.06); color: #fff; }
+  .menu-item.active { background: rgba(255,255,255,.1); border-left-color: var(--brand-silver-light); color: #fff; font-weight: 500; }
+  .main { flex: 1; padding: 22px; overflow-x: auto; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; background: #fff;
+    padding: 14px 20px; border-radius: 10px; margin-bottom: 18px;
+    box-shadow: 0 2px 8px rgba(15,36,86,.06);
+    border: 1px solid var(--brand-silver-light);
+  }
+  .topbar .user-info { font-size: 13px; color: var(--brand-text-soft); }
+  .topbar .user-info b { color: var(--brand-primary); }
+
+  /* 卡片 */
+  .card { background: #fff; padding: 20px; border-radius: 10px; margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(15,36,86,.05); border: 1px solid var(--brand-silver-light);
+  }
+  .card h3 { margin-bottom: 16px; font-size: 15px; color: var(--brand-primary);
+    padding-bottom: 12px; border-bottom: 1px solid var(--brand-silver-light);
+    display: flex; justify-content: space-between; align-items: center; font-weight: 600; letter-spacing: .5px;
+  }
+  .card h3 .actions { display: flex; gap: 8px; }
+
+  /* 表格 */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--brand-silver-light); }
+  th { background: linear-gradient(180deg, #f4f6fb, #e8ecf3); color: var(--brand-text); font-weight: 600; font-size: 12px; letter-spacing: .5px; }
+  tr:hover td { background: #fafbfd; }
+  .table-wrap { overflow-x: auto; }
+
+  /* 表单网格 */
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 14px; }
+
+  /* KPI 卡片（按银蓝主调重做）*/
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .kpi { background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent)); color: #fff;
+    padding: 18px; border-radius: 10px; box-shadow: 0 4px 12px rgba(26,58,138,.2);
+    position: relative; overflow: hidden;
+  }
+  .kpi::before { content:''; position: absolute; top: -20px; right: -20px; width: 80px; height: 80px;
+    background: rgba(255,255,255,.08); border-radius: 50%;
+  }
+  .kpi .label { font-size: 12px; opacity: .9; margin-bottom: 6px; letter-spacing: .5px; }
+  .kpi .value { font-size: 22px; font-weight: 700; letter-spacing: 1px; }
+  .kpi.green { background: linear-gradient(135deg, #0a7a5c, #1ca47b); }
+  .kpi.orange { background: linear-gradient(135deg, #b8651b, #e6a23c); }
+  .kpi.red { background: linear-gradient(135deg, #a8221c, #e74c3c); }
+  .kpi.blue { background: linear-gradient(135deg, #1a4f8a, #2e7dd6); }
+  .kpi.purple { background: linear-gradient(135deg, #4a2887, #7b3fcc); }
+  .kpi.silver { background: linear-gradient(135deg, #5a6478, #8b94a8); }
+
+  /* 标签 */
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 500; }
+  .tag-green { background: #e7f7ee; color: #1ca47b; }
+  .tag-red { background: #fff1f0; color: #c0392b; }
+  .tag-blue { background: #e6efff; color: var(--brand-primary); }
+  .tag-orange { background: #fff7e6; color: #b8651b; }
+
+  /* 工具条 */
+  .toolbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .toolbar input, .toolbar select { padding: 8px 10px; border: 1px solid var(--brand-silver); border-radius: 6px; }
+
+  .action-link { color: var(--brand-primary); cursor: pointer; margin-right: 8px; font-size: 13px; font-weight: 500; }
+  .action-link:hover { text-decoration: underline; }
+  .action-link.danger { color: #c0392b; }
+
+  .tip { background: linear-gradient(90deg, #fff8e6, #fffbf0); border-left: 3px solid var(--brand-accent);
+    padding: 10px 14px; font-size: 13px; color: var(--brand-text-soft); margin-bottom: 14px; border-radius: 4px;
+  }
+  .empty { text-align: center; padding: 40px; color: #999; font-size: 14px; }
+
+  /* 模态框 */
+  .modal-mask { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15,36,86,.5);
+    display: flex; align-items: center; justify-content: center; z-index: 999; backdrop-filter: blur(2px);
+  }
+  .modal { background: #fff; border-radius: 12px; padding: 24px; width: 520px; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 30px 80px rgba(15,36,86,.4);
+  }
+  .modal h3 { margin-bottom: 16px; color: var(--brand-primary); }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+
+  /* 看板图表区 */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
+
+  /* ================================================
+   * 移动端汉堡按钮 + 抽屉式侧边栏
+   * ================================================ */
+  .menu-toggle { display: none; cursor: pointer; padding: 6px 10px; border-radius: 6px;
+    background: var(--brand-primary); color: #fff; font-size: 18px; line-height: 1;
+    border: none; margin-right: 12px;
+  }
+  .sidebar-mask { display: none; position: fixed; inset: 0; background: rgba(15,36,86,.5);
+    z-index: 998; backdrop-filter: blur(2px);
+  }
+  .sidebar-mask.show { display: block; }
+
+  @media (max-width: 768px) {
+    .layout { flex-direction: column; }
+    .sidebar {
+      position: fixed; top: 0; left: 0; height: 100vh; width: 240px;
+      transform: translateX(-100%); transition: transform .25s ease;
+      z-index: 999; overflow-y: auto;
+    }
+    .sidebar.open { transform: translateX(0); }
+    .main { padding: 14px; width: 100%; }
+    .menu-toggle { display: inline-block; }
+    .topbar { padding: 12px 14px; flex-wrap: wrap; gap: 8px; }
+    .topbar .user-info { font-size: 12px; flex: 1; min-width: 0; }
+    .card { padding: 14px; border-radius: 8px; }
+    .card h3 { font-size: 14px; }
+    .form-grid { grid-template-columns: 1fr; gap: 10px; }
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .kpi { padding: 14px; }
+    .kpi .value { font-size: 18px; }
+    .kpi .label { font-size: 11px; }
+    table { font-size: 12px; }
+    th, td { padding: 8px 6px; }
+    .role-tabs { grid-template-columns: 1fr 1fr; }
+    .login-card { width: calc(100vw - 32px); padding: 28px 22px; }
+    .modal { width: calc(100vw - 32px); padding: 18px; }
+    .toolbar { gap: 6px; }
+    .toolbar input, .toolbar select { padding: 7px 9px; font-size: 13px; }
+    .btn { font-size: 14px; padding: 10px; }
+    .btn-sm { padding: 7px 12px; font-size: 12px; }
+  }
+  @media (max-width: 480px) {
+    .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .kpi .value { font-size: 16px; }
+  }
+
+  /* Toast 提示 */
+  .toast { position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%) scale(.9);
+    background: rgba(15,36,86,.95); color: #fff; padding: 18px 28px; border-radius: 10px;
+    font-size: 15px; font-weight: 500; box-shadow: 0 10px 40px rgba(15,36,86,.4);
+    z-index: 9999; opacity: 0; transition: opacity .2s, transform .25s; pointer-events: none;
+    min-width: 200px; text-align: center; backdrop-filter: blur(4px);
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  .toast.success { background: rgba(28,164,123,.95); }
+  .toast.error { background: rgba(192,57,43,.95); }
+  .toast .icon { font-size: 32px; display: block; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+
+<!-- ============ 登录页 ============ -->
+<div id="loginPage" class="login-wrap">
+  <div class="login-card">
+    <div class="brand-block">
+      <img src="uploads/logo.jpg" alt="仕净" class="brand-logo"/>
+      <h1>仕净管理系统</h1>
+      <p class="subtitle">SHIJING · 内部协作中台 · v6</p>
+    </div>
+
+    <div class="role-tabs" style="margin-bottom:18px">
+      <div class="role-tab active" data-mode="login" onclick="switchAuthMode('login')">登 录</div>
+      <div class="role-tab" data-mode="register" onclick="switchAuthMode('register')">注 册</div>
+    </div>
+
+    <!-- 登录表单 -->
+    <div id="loginForm">
+      <div class="form-group">
+        <label>用户名</label>
+        <input id="loginUsername" placeholder="请输入用户名" autocomplete="username"/>
+      </div>
+      <div class="form-group">
+        <label>密码</label>
+        <input type="password" id="loginPwd" placeholder="请输入密码" autocomplete="current-password"/>
+      </div>
+      <button class="btn" id="loginBtn">登 录</button>
+      <p style="margin-top:14px;font-size:12px;color:#999;text-align:center">首次使用请先注册，等待总部审批</p>
+    </div>
+
+    <!-- 注册表单 -->
+    <div id="registerForm" class="hidden">
+      <div class="form-group">
+        <label>真实姓名 *</label>
+        <input id="regRealName" placeholder="如 张明"/>
+      </div>
+      <div class="form-group">
+        <label>用户名 *（登录用，至少 3 字符）</label>
+        <input id="regUsername" placeholder="字母 / 数字"/>
+      </div>
+      <div class="form-group">
+        <label>密码 *（至少 4 字符）</label>
+        <input type="password" id="regPwd" placeholder="自己设一个"/>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>业务线 *</label>
+          <select id="regRole" onchange="onRegRoleChange()">
+            <option value="ad">营销线</option>
+            <option value="cs">客服销售线</option>
+            <option value="store">市场线</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>所属部门 *</label>
+          <select id="regTeam"></select>
+        </div>
+      </div>
+      <button class="btn" id="registerBtn">提交注册</button>
+      <p style="margin-top:14px;font-size:12px;color:#999;text-align:center">提交后等待总部审批通过即可登录</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 主体框架 ============ -->
+<div id="appPage" class="layout hidden">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <img src="uploads/logo.jpg" alt="仕净"/>
+      <div>
+        <div class="brand-name">仕净管理系统</div>
+        <div class="brand-role" id="roleTitle">控制台</div>
+      </div>
+    </div>
+    <div id="menuList"></div>
+    <div style="padding:20px;margin-top:20px;border-top:1px solid #34495e">
+      <button class="btn btn-danger btn-sm" id="logoutBtn" style="width:100%">退出登录</button>
+    </div>
+  </aside>
+  <div class="sidebar-mask" id="sidebarMask" onclick="toggleSidebar(false)"></div>
+  <main class="main">
+    <div class="topbar">
+      <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
+      <div class="user-info">当前：<b id="curRole"></b> · <b id="curTeam"></b></div>
+      <div>
+        <span style="font-size:12px;color:#999" id="curTime"></span>
+      </div>
+    </div>
+    <div id="pageContent"></div>
+  </main>
+</div>
+
+<!-- 模态框容器 -->
+<div id="modalRoot"></div>
+<div id="toastRoot"></div>
+
+<script>
+/* ============================================================
+ * 数据层：本地 Express API（VPS 版本）
+ * ============================================================ */
+const API_BASE = ''; // 同源，直接 /api/xxx
+let CLOUD_READY = false;
+
+async function api(path, body) {
+  try {
+    const res = await fetch(API_BASE + '/api/' + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Token': getToken() },
+      body: body ? JSON.stringify(body) : '{}',
+    });
+    return await res.json();
+  } catch (e) {
+    console.error('[API]', path, e);
+    return { ok: false, error: e.message };
+  }
+}
+
+async function initCloudBase() {
+  // VPS 版本：直接 ping 后端
+  try {
+    const res = await api('diagnose');
+    if (res.ok) {
+      CLOUD_READY = true;
+      console.log('[VPS] 后端连接成功，counts:', res.counts);
+      return true;
+    }
+    console.error('[VPS] 后端连接失败', res);
+    if (typeof showToast === 'function') showToast('后端连接失败，请联系管理员', 'error', 6000);
+    return false;
+  } catch (e) {
+    console.error('[VPS] 后端连接异常', e);
+    if (typeof showToast === 'function') showToast('后端连接失败：' + (e.message||'').slice(0,80), 'error', 6000);
+    return false;
+  }
+}
+
+async function pullCloudData() {
+  if (!CLOUD_READY) return;
+  // 业务数据
+  const r1 = await api('list');
+  if (r1.ok) {
+    DB.ad = r1.data.ad || [];
+    DB.cs = r1.data.cs || [];
+    DB.store = r1.data.store || [];
+    DB.invite = r1.data.invite || [];
+    console.log('[拉取] 业务数据', { ad: DB.ad.length, cs: DB.cs.length, store: DB.store.length, invite: DB.invite.length });
+  } else {
+    console.warn('[拉取] list 失败', r1);
+  }
+  // 配置（GET）
+  try {
+    const cfgRes = await fetch(API_BASE + '/api/config').then(r => r.json());
+    if (cfgRes.ok && cfgRes.config) {
+      const cloudCfg = cfgRes.config;
+      if (cloudCfg.teams) DB.teams = cloudCfg.teams;
+      if (cloudCfg.wecomConfig) DB.wecomConfig = cloudCfg.wecomConfig;
+    } else {
+      await pushCloudConfig();
+    }
+  } catch (e) { console.warn('[拉取] config', e); }
+}
+
+async function pushCloudRecord(col, record) {
+  if (!CLOUD_READY) { showToast('后端未就绪，仅存本地', 'error', 3000); return false; }
+  const res = await api('add', { collection: col, record });
+  if (!res.ok) {
+    console.warn('[写入]', col, res);
+    showToast('写入失败：' + (res.error||'').slice(0, 100), 'error', 5000);
+    return false;
+  }
+  return true;
+}
+
+async function updateCloudRecord(col, id, data) {
+  if (!CLOUD_READY) return false;
+  const res = await api('update', { collection: col, id, data });
+  if (!res.ok) console.warn('[更新]', col, res);
+  return res.ok;
+}
+
+async function deleteCloudRecord(col, id) {
+  if (!CLOUD_READY) return false;
+  const res = await api('delete', { collection: col, id });
+  if (!res.ok) console.warn('[软删除]', col, res);
+  return res.ok;
+}
+
+async function pushCloudConfig() {
+  if (!CLOUD_READY) return;
+  const res = await api('config', { teams: DB.teams, wecomConfig: DB.wecomConfig });
+  if (!res.ok) console.warn('[写入] config 失败', res);
+}
+
+// 推送企业微信（直接走后端 /api/wecom-push）
+async function callWecomCloudFunction(webhook, content) {
+  if (!CLOUD_READY) return false;
+  const res = await api('wecom-push', { webhook, content });
+  return res && res.errcode === 0;
+}
+
+// 推送总部群（让后端从 config 读取 hqWebhook）
+async function pushHQ(content) {
+  if (!CLOUD_READY) return false;
+  const res = await api('wecom-push-hq', { content });
+  return res && res.ok;
+}
+
+/* ============================================================
+ * 数据层：内存缓存 + LocalStorage 双写
+ * ============================================================ */
+const STORAGE_KEY = 'beauty_mgmt_v1';
+const SCHEMA_VERSION = 'v5_vps'; // VPS 版本
+
+// 默认配置（首次加载初始化）
+const DEFAULT_CONFIG = {
+  teams: {
+    // 营销线（原投放）：3 个部
+    ad_1: { name: '营销线1部', role: 'ad', password: 'TF001' },
+    ad_2: { name: '营销线2部', role: 'ad', password: 'TF66' },
+    ad_3: { name: '营销线3部', role: 'ad', password: 'TF88' },
+    // 客服销售线（原销售线）：3 个部
+    cs_1: { name: '客服销售线1部', role: 'cs', password: 'KF001' },
+    cs_2: { name: '客服销售线2部', role: 'cs', password: 'KF66' },
+    cs_3: { name: '客服销售线3部', role: 'cs', password: 'KF88' },
+    // 市场线（原门店）：4 家店
+    store_1: { name: '长沙万达店', role: 'store', password: 'CS001' },
+    store_2: { name: '上海静安店', role: 'store', password: 'MD001' },
+    store_3: { name: '上海闵行店', role: 'store', password: 'MD002' },
+    store_4: { name: '上海浦东店', role: 'store', password: 'MD003' },
+    // 总部服务线
+    hq: { name: '总部服务线', role: 'hq', password: 'SJ88' },
+  },
+  // 企业微信配置（每个门店一个 webhook）
+  wecomConfig: {
+    storeWebhooks: {
+      store_1: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e4b195fe-ca8a-4514-b2f3-94e4ac8fe2e7',
+      store_2: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e4b195fe-ca8a-4514-b2f3-94e4ac8fe2e7',
+      store_3: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e4b195fe-ca8a-4514-b2f3-94e4ac8fe2e7',
+      store_4: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e4b195fe-ca8a-4514-b2f3-94e4ac8fe2e7',
+    },
+    docArchiveUrl: '', // 留档企业微信文档地址（手工填写）
+    reminderHour: 19, // 7点 = 19:00 提醒
+  },
+  // 业务数据
+  ad: [],         // 投放数据 {id, teamId, date, cost, addFans, costPerFan}
+  cs: [],         // 客服定金 {id, teamId, date, depositCount, depositAmount}
+  store: [],      // 门店服务数据 {id, teamId, date, customerType, amount, performer, customerName, phone, isOperated, isClosed, closedAmount, remark}
+  invite: [],     // 客户邀约 {id, csTeamId, storeTeamId, customerName, phone, arriveTime, status:'pending'|'arrived'|'no_show', notified, remindedAt, archivedAt}
+  reminderLog: [],// 已发送提醒记录
+};
+
+function loadDB() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) {
+    const fresh = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    fresh._schema = SCHEMA_VERSION;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
+    return fresh;
+  }
+  try {
+    const db = JSON.parse(raw);
+    // schema 升级：保留业务数据，强制刷新 teams 配置
+    if (db._schema !== SCHEMA_VERSION) {
+      console.log('[DB] schema 升级：', db._schema, '→', SCHEMA_VERSION, '，重置团队配置（保留业务数据）');
+      db.teams = JSON.parse(JSON.stringify(DEFAULT_CONFIG.teams));
+      db.wecomConfig = db.wecomConfig || JSON.parse(JSON.stringify(DEFAULT_CONFIG.wecomConfig));
+      // 兼容性：补全新店的 webhook
+      Object.keys(DEFAULT_CONFIG.wecomConfig.storeWebhooks).forEach(k => {
+        if (!db.wecomConfig.storeWebhooks[k]) db.wecomConfig.storeWebhooks[k] = DEFAULT_CONFIG.wecomConfig.storeWebhooks[k];
+      });
+      db._schema = SCHEMA_VERSION;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+    }
+    // 兼容字段补全
+    Object.keys(DEFAULT_CONFIG).forEach(k => { if (!(k in db)) db[k] = DEFAULT_CONFIG[k]; });
+    return db;
+  } catch (e) {
+    return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+  }
+}
+function saveDB() { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); }
+
+let DB = loadDB();
+
+/* ============================================================
+ * 会话状态
+ * ============================================================ */
+const SESSION_KEY = 'beauty_mgmt_session';
+function getSession() { try { return JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch { return null; } }
+function setSession(s) { sessionStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
+function clearSession() { sessionStorage.removeItem(SESSION_KEY); }
+
+/* ============================================================
+ * 工具函数
+ * ============================================================ */
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const fmtDate = (d) => { const x = new Date(d); return x.toISOString().slice(0,10); };
+const today = () => fmtDate(new Date());
+const fmtMoney = (n) => '¥' + (Number(n)||0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+const fmtNum = (n) => (Number(n)||0).toLocaleString('zh-CN');
+const fmtPct = (n) => (Number(n)||0).toFixed(1) + '%';
+const safeDiv = (a, b) => b === 0 || !b ? 0 : a / b;
+
+const ROLE_LABEL = { ad: '营销线', cs: '客服销售线', store: '市场线', hq: '总部服务线' };
+
+// 各角色提交后默认返回的"主页" key（与 MENU 中第一项保持一致）
+const ROLE_HOME = { ad: 'ad_input', cs: 'cs_input', store: 'invite_pending', hq: 'hq_dashboard' };
+
+// Toast 提示
+function showToast(text, type = 'success', duration = 1600) {
+  const root = document.getElementById('toastRoot');
+  if (!root) return;
+  const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ⓘ';
+  root.innerHTML = `<div class="toast ${type}"><span class="icon">${icon}</span>${text}</div>`;
+  const el = root.firstChild;
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => { if (root.firstChild === el) root.innerHTML = ''; }, 300);
+  }, duration);
+}
+
+// 提交成功后：toast + 切到对应角色主页（带菜单高亮）
+function afterSubmit(text = '提交成功', goHome = true) {
+  showToast(text, 'success');
+  if (!goHome) return;
+  const ses = getSession();
+  if (!ses) return;
+  const homeKey = ROLE_HOME[ses.role];
+  if (!homeKey) return;
+  // 切菜单高亮
+  document.querySelectorAll('.menu-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.key === homeKey);
+  });
+  setTimeout(() => renderPage(homeKey), 350);
+}
+
+function teamsByRole(role) {
+  return Object.entries(DB.teams).filter(([k,v]) => v.role === role).map(([k,v]) => ({ id: k, ...v }));
+}
+
+/* ============================================================
+ * v6 登录 / 注册逻辑（基于用户名密码 + token）
+ * ============================================================ */
+const TOKEN_KEY = 'shijing_token_v6';
+function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
+function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
+function clearToken() { localStorage.removeItem(TOKEN_KEY); }
+
+window.switchAuthMode = (mode) => {
+  document.querySelectorAll('.login-card .role-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.mode === mode);
+  });
+  document.getElementById('loginForm').classList.toggle('hidden', mode !== 'login');
+  document.getElementById('registerForm').classList.toggle('hidden', mode !== 'register');
+  if (mode === 'register') refreshRegTeamSelect();
+};
+
+function refreshRegTeamSelect() {
+  const role = document.getElementById('regRole').value;
+  const sel = document.getElementById('regTeam');
+  const teams = teamsByRole(role);
+  sel.innerHTML = teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+}
+window.onRegRoleChange = refreshRegTeamSelect;
+
+document.getElementById('loginBtn').onclick = async () => {
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPwd').value.trim();
+  if (!username || !password) return alert('请输入用户名和密码');
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true; btn.textContent = '登录中...';
+  try {
+    const res = await api('login', { username, password });
+    if (!res.ok) return alert('登录失败：' + res.error);
+    setToken(res.token);
+    window.__USER__ = res.user;
+    enterApp();
+  } finally { btn.disabled = false; btn.textContent = '登 录'; }
+};
+
+document.getElementById('registerBtn').onclick = async () => {
+  const realName = document.getElementById('regRealName').value.trim();
+  const username = document.getElementById('regUsername').value.trim();
+  const password = document.getElementById('regPwd').value.trim();
+  const role = document.getElementById('regRole').value;
+  const teamId = document.getElementById('regTeam').value;
+  if (!realName || !username || !password) return alert('请填写完整');
+  const btn = document.getElementById('registerBtn');
+  btn.disabled = true; btn.textContent = '提交中...';
+  try {
+    const res = await api('register', { username, password, realName, role, teamId });
+    if (!res.ok) return alert('注册失败：' + res.error);
+    alert('✅ 注册成功！请等待总部审批通过后即可登录');
+    switchAuthMode('login');
+    document.getElementById('loginUsername').value = username;
+  } finally { btn.disabled = false; btn.textContent = '提交注册'; }
+};
+
+document.getElementById('logoutBtn').onclick = async () => {
+  await api('logout');
+  clearToken();
+  location.reload();
+};
+
+// 兼容老代码：用 window.__USER__ 提供 getSession
+window.getSession = function() {
+  const u = window.__USER__;
+  if (!u) return null;
+  return { teamId: u.teamId, role: u.role, teamName: u.teamName, userId: u.id, userName: u.realName, username: u.username };
+};
+window.clearSession = function() { clearToken(); window.__USER__ = null; };
+
+refreshRegTeamSelect();
+
+/* ============================================================
+ * 进入主体
+ * ============================================================ */
+function enterApp() {
+  const ses = getSession();
+  if (!ses) return;
+  document.getElementById('loginPage').classList.add('hidden');
+  document.getElementById('appPage').classList.remove('hidden');
+  document.getElementById('roleTitle').textContent = ROLE_LABEL[ses.role];
+  document.getElementById('curRole').textContent = ROLE_LABEL[ses.role];
+  document.getElementById('curTeam').textContent = ses.teamName + (ses.userName ? ' / ' + ses.userName : '');
+  buildMenu(ses);
+  // 时间
+  const updateTime = () => document.getElementById('curTime').textContent = new Date().toLocaleString('zh-CN');
+  updateTime(); setInterval(updateTime, 30000);
+  // 7点未反馈提醒检查（仅总部跑，避免重复推送）
+  if (ses.role === 'hq') {
+    setTimeout(checkPendingReminders, 1500);
+    setInterval(checkPendingReminders, 5 * 60 * 1000);
+  }
+}
+
+const MENU = {
+  ad: [
+    { key: 'ad_input', label: '📊 投放数据录入' },
+    { key: 'ad_list', label: '📋 我的投放记录' },
+  ],
+  cs: [
+    { key: 'cs_input', label: '💰 定金数据录入' },
+    { key: 'cs_list', label: '📋 我的定金记录' },
+    { key: 'invite_input', label: '📞 客户邀约登记' },
+    { key: 'invite_list', label: '📋 我的邀约记录' },
+  ],
+  store: [
+    { key: 'invite_pending', label: '🔔 待到店客户' },
+    { key: 'walk_in', label: '✍️ 非客服到店顾客登记' },
+    { key: 'store_list', label: '📋 门店服务记录' },
+  ],
+  hq: [
+    { key: 'hq_dashboard', label: '📈 数据看板' },
+    { key: 'hq_report', label: '📊 数据报表' },
+    { key: 'hq_detail', label: '📅 每日明细' },
+    { key: 'hq_invite', label: '📞 全部邀约' },
+    { key: 'hq_users', label: '👥 用户审批管理' },
+    { key: 'hq_settings', label: '⚙️ 系统设置' },
+  ],
+};
+
+function buildMenu(ses) {
+  const list = document.getElementById('menuList');
+  list.innerHTML = MENU[ses.role].map((m, i) => `<div class="menu-item ${i===0?'active':''}" data-key="${m.key}">${m.label}</div>`).join('');
+  list.querySelectorAll('.menu-item').forEach(el => {
+    el.onclick = () => {
+      list.querySelectorAll('.menu-item').forEach(x => x.classList.remove('active'));
+      el.classList.add('active');
+      renderPage(el.dataset.key);
+      // 移动端点击菜单后自动收起
+      if (window.innerWidth <= 768) toggleSidebar(false);
+    };
+  });
+  renderPage(MENU[ses.role][0].key);
+}
+
+window.toggleSidebar = (force) => {
+  const sb = document.querySelector('.sidebar');
+  const mask = document.getElementById('sidebarMask');
+  if (!sb) return;
+  const willOpen = force === undefined ? !sb.classList.contains('open') : force;
+  sb.classList.toggle('open', willOpen);
+  mask.classList.toggle('show', willOpen);
+};
+
+/* ============================================================
+ * 页面渲染分发
+ * ============================================================ */
+function renderPage(key) {
+  const root = document.getElementById('pageContent');
+  const ses = getSession();
+  switch (key) {
+    case 'ad_input': return renderAdInput(root, ses);
+    case 'ad_list': return renderAdList(root, ses);
+    case 'cs_input': return renderCsInput(root, ses);
+    case 'cs_list': return renderCsList(root, ses);
+    case 'invite_input': return renderInviteInput(root, ses);
+    case 'invite_list': return renderInviteList(root, ses);
+    case 'invite_pending': return renderStorePending(root, ses);
+    case 'walk_in': return renderWalkIn(root, ses);
+    case 'store_list': return renderStoreList(root, ses);
+    case 'hq_dashboard': return renderHQDashboard(root);
+    case 'hq_report': return renderHQReport(root);
+    case 'hq_detail': return renderHQDetail(root);
+    case 'hq_invite': return renderHQInvite(root);
+    case 'hq_users': return renderHQUsers(root);
+    case 'hq_settings': return renderHQSettings(root);
+  }
+}
+
+/* ============================================================
+ * 投放：录入 + 列表
+ * ============================================================ */
+function renderAdInput(root, ses) {
+  root.innerHTML = `
+    <div class="card">
+      <h3>📊 投放数据录入 <span style="font-size:12px;color:#999">${ses.teamName}</span></h3>
+      <div class="tip">填入当日广告消耗与加粉数据；加粉成本会自动计算。</div>
+      <div class="form-grid">
+        <div class="form-group"><label>日期</label><input type="date" id="ad_date" value="${today()}"/></div>
+        <div class="form-group"><label>广告消耗（元）</label><input type="number" id="ad_cost" step="0.01" placeholder="如 5000"/></div>
+        <div class="form-group"><label>加粉人数</label><input type="number" id="ad_fans" placeholder="如 50"/></div>
+        <div class="form-group"><label>加粉成本（自动）</label><input id="ad_cpf" disabled placeholder="自动计算"/></div>
+      </div>
+      <button class="btn btn-sm" id="ad_save">保存</button>
+    </div>
+  `;
+  const calc = () => {
+    const c = +document.getElementById('ad_cost').value || 0;
+    const f = +document.getElementById('ad_fans').value || 0;
+    document.getElementById('ad_cpf').value = f ? (c/f).toFixed(2) : '';
+  };
+  ['ad_cost','ad_fans'].forEach(id => document.getElementById(id).oninput = calc);
+  document.getElementById('ad_save').onclick = async () => {
+    const date = document.getElementById('ad_date').value;
+    const cost = +document.getElementById('ad_cost').value;
+    const addFans = +document.getElementById('ad_fans').value;
+    if (!date || !cost || !addFans) return alert('请填写完整');
+    const btn = document.getElementById('ad_save');
+    btn.disabled = true; btn.textContent = '提交中...';
+    try {
+      const rec = { id: uid(), teamId: ses.teamId, date, cost, addFans, costPerFan: +(cost/addFans).toFixed(2), createdAt: Date.now() };
+      DB.ad.push(rec);
+      saveDB();
+      const ok = await pushCloudRecord('ad', rec);
+      if (!ok && CLOUD_READY) {
+        showToast('云端写入失败，已存本地。请检查网络后到「数据管理」点同步', 'error', 4000);
+      } else {
+        afterSubmit('投放数据已提交');
+      }
+    } finally {
+      btn.disabled = false; btn.textContent = '保存';
+    }
+  };
+}
+function renderAdList(root, ses) {
+  const data = DB.ad.filter(x => x.teamId === ses.teamId).sort((a,b) => b.date.localeCompare(a.date));
+  root.innerHTML = `
+    <div class="card">
+      <h3>📋 我的投放记录</h3>
+      ${data.length === 0 ? '<div class="empty">暂无数据</div>' :
+      `<div class="table-wrap"><table>
+        <thead><tr><th>日期</th><th>广告消耗</th><th>加粉人数</th><th>加粉成本</th><th>操作</th></tr></thead>
+        <tbody>${data.map(x => `<tr>
+          <td>${x.date}</td><td>${fmtMoney(x.cost)}</td><td>${fmtNum(x.addFans)}</td>
+          <td>${fmtMoney(x.costPerFan)}</td>
+          <td><span class="action-link danger" onclick="delAd('${x.id}')">删除</span></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>`;
+}
+// 删除业务记录时推送总部群（VPS 版直接走 pushHQ API）
+async function notifyHQDelete(category, record, ses) {
+  const teamName = (DB.teams[ses.teamId] && DB.teams[ses.teamId].name) || ses.teamId;
+  const time = new Date().toLocaleString('zh-CN');
+  let detail = '';
+  if (category === '投放数据') {
+    detail = `> 日期：${record.date}\n> 广告消耗：¥${record.cost}\n> 加粉人数：${record.addFans}\n> 加粉成本：¥${record.costPerFan}`;
+  } else if (category === '客服销售（定金）数据') {
+    detail = `> 日期：${record.date}\n> 定金数：${record.depositCount} 单\n> 定金金额：¥${record.depositAmount}`;
+  } else if (category === '门店服务（顾客到店）数据') {
+    detail = `> 日期：${record.date}\n> 客户：**${record.customerName||'-'}**\n> 来源：${record.walkIn ? '非客服到店' : '客服邀约'}${record.source ? ' · ' + record.source : ''}\n> 操作金额：¥${record.opAmount||0} | 成单金额：¥${record.closedAmount||0}\n> 业绩贡献人：${record.performer||'-'}`;
+  }
+  const content = `## ⚠️ 数据删除提醒\n` +
+    `> 操作类型：<font color="warning">**删除${category}**</font>\n` +
+    `> 操作团队：${teamName}\n` +
+    `> 操作时间：${time}\n\n` +
+    `**被删除的记录**\n${detail}\n\n` +
+    `请总部及时核实是否合规。如属误删请尽快补录。`;
+
+  const ok = await pushHQ(content);
+  if (!ok) console.warn('[删除推送] 失败');
+  return ok;
+}
+
+window.delAd = async (id) => {
+  if(!confirm('数据请谨慎删除，总部会收到删除内容通知。\n\n确定删除？')) return;
+  const ses = getSession();
+  const rec = DB.ad.find(x => x.id === id);
+  DB.ad = DB.ad.filter(x => x.id !== id);
+  saveDB();
+  await deleteCloudRecord('ad', id);
+  if (rec) await notifyHQDelete('投放数据', rec, ses);
+  renderPage('ad_list');
+};
+
+/* ============================================================
+ * 客服：定金录入 + 邀约登记
+ * ============================================================ */
+function renderCsInput(root, ses) {
+  root.innerHTML = `
+    <div class="card">
+      <h3>💰 定金数据录入 <span style="font-size:12px;color:#999">${ses.teamName}</span></h3>
+      <div class="form-grid">
+        <div class="form-group"><label>日期</label><input type="date" id="cs_date" value="${today()}"/></div>
+        <div class="form-group"><label>定金数（个）</label><input type="number" id="cs_count" placeholder="如 8"/></div>
+        <div class="form-group"><label>定金收款金额</label><input type="number" id="cs_amount" step="0.01" placeholder="如 80"/></div>
+      </div>
+      <button class="btn btn-sm" id="cs_save">保存</button>
+    </div>
+  `;
+  document.getElementById('cs_save').onclick = async () => {
+    const date = document.getElementById('cs_date').value;
+    const depositCount = +document.getElementById('cs_count').value;
+    const depositAmount = +document.getElementById('cs_amount').value;
+    if (!date || !depositCount) return alert('请填写完整');
+    const btn = document.getElementById('cs_save');
+    btn.disabled = true; btn.textContent = '提交中...';
+    try {
+      const rec = { id: uid(), teamId: ses.teamId, date, depositCount, depositAmount, createdAt: Date.now() };
+      DB.cs.push(rec);
+      saveDB();
+      const ok = await pushCloudRecord('cs', rec);
+      if (!ok && CLOUD_READY) {
+        showToast('云端写入失败，已存本地。请检查网络后到「数据管理」点同步', 'error', 4000);
+      } else {
+        afterSubmit('定金数据已提交');
+      }
+    } finally {
+      btn.disabled = false; btn.textContent = '保存';
+    }
+  };
+}
+function renderCsList(root, ses) {
+  const data = DB.cs.filter(x => x.teamId === ses.teamId).sort((a,b) => b.date.localeCompare(a.date));
+  root.innerHTML = `
+    <div class="card">
+      <h3>📋 我的定金记录</h3>
+      ${data.length === 0 ? '<div class="empty">暂无数据</div>' :
+      `<div class="table-wrap"><table>
+        <thead><tr><th>日期</th><th>定金数</th><th>定金收款金额</th><th>操作</th></tr></thead>
+        <tbody>${data.map(x => `<tr>
+          <td>${x.date}</td><td>${fmtNum(x.depositCount)}</td><td>${fmtMoney(x.depositAmount)}</td>
+          <td><span class="action-link danger" onclick="delCs('${x.id}')">删除</span></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>`;
+}
+window.delCs = async (id) => {
+  if(!confirm('数据请谨慎删除，总部会收到删除内容通知。\n\n确定删除？')) return;
+  const ses = getSession();
+  const rec = DB.cs.find(x => x.id === id);
+  DB.cs = DB.cs.filter(x => x.id !== id);
+  saveDB();
+  await deleteCloudRecord('cs', id);
+  if (rec) await notifyHQDelete('客服销售（定金）数据', rec, ses);
+  renderPage('cs_list');
+};
+
+function renderInviteInput(root, ses) {
+  const stores = teamsByRole('store');
+  root.innerHTML = `
+    <div class="card">
+      <h3>📞 客户邀约登记</h3>
+      <div class="tip">提交后将通过企业微信群机器人推送至对应门店；门店反馈后数据自动同步到门店服务记录。</div>
+      <div class="form-grid">
+        <div class="form-group"><label>客户姓名</label><input id="inv_name" placeholder="如 张哥"/></div>
+        <div class="form-group"><label>客户电话</label><input id="inv_phone" placeholder="11位手机号"/></div>
+        <div class="form-group"><label>预计到店时间</label><input type="datetime-local" id="inv_time"/></div>
+        <div class="form-group"><label>到店门店</label>
+          <select id="inv_store">${stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}</select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1"><label>备注（选填）</label>
+          <textarea id="inv_remark" rows="2" placeholder="客户情况、特殊需求等"></textarea>
+        </div>
+      </div>
+      <button class="btn btn-sm" id="inv_save">提交并通知门店</button>
+    </div>
+  `;
+  document.getElementById('inv_save').onclick = async () => {
+    const customerName = document.getElementById('inv_name').value.trim();
+    const phone = document.getElementById('inv_phone').value.trim();
+    const arriveTime = document.getElementById('inv_time').value;
+    const storeTeamId = document.getElementById('inv_store').value;
+    const remark = document.getElementById('inv_remark').value.trim();
+    if (!customerName || !phone || !arriveTime) return alert('请填写完整');
+    const rec = { id: uid(), csTeamId: ses.teamId, csTeamName: ses.teamName, storeTeamId,
+      customerName, phone, arriveTime, remark, status: 'pending', notified: false, createdAt: Date.now() };
+    DB.invite.push(rec);
+    saveDB();
+    await pushCloudRecord('invite', rec);
+
+    // 推送规则：
+    // - 到店日期 = 今天 → 立即推送门店群
+    // - 到店日期 > 今天（提前预约）→ 不立即推送，等到当天 09:00 自动推送
+    const arriveDate = (arriveTime || '').slice(0, 10);
+    const todayStr = today();
+    if (arriveDate === todayStr) {
+      const ok = await pushWecom(rec, 'arrival');
+      rec.notified = ok;
+      saveDB();
+      await updateCloudRecord('invite', rec.id, { notified: ok, scheduledPush: false });
+      afterSubmit(ok ? '邀约已提交，门店已收到通知' : '邀约已提交（推送失败请联系总部）');
+    } else {
+      // 标记为待定时推送
+      rec.notified = false;
+      rec.scheduledPush = true;
+      saveDB();
+      await updateCloudRecord('invite', rec.id, { notified: false, scheduledPush: true });
+      afterSubmit('邀约已提交。到店日期为 ' + arriveDate + '，将于当天 09:00 自动推送门店群');
+    }
+  };
+}
+function renderInviteList(root, ses) {
+  const data = DB.invite.filter(x => x.csTeamId === ses.teamId).sort((a,b) => b.createdAt - a.createdAt);
+  const storeName = id => DB.teams[id]?.name || id;
+  const tag = s => s==='arrived' ? '<span class="tag tag-green">已到店</span>'
+                : s==='no_show' ? '<span class="tag tag-red">未到店</span>'
+                : s==='cancelled' ? '<span class="tag tag-red">已取消</span>'
+                : '<span class="tag tag-orange">待反馈</span>';
+  root.innerHTML = `
+    <div class="card">
+      <h3>📋 我的邀约记录</h3>
+      <div class="tip">客户改约/不来？点「取消」按钮即可，系统会同步通知门店。<b>仅"待反馈"状态可取消</b>。</div>
+      ${data.length===0 ? '<div class="empty">暂无邀约</div>' :
+      `<div class="table-wrap"><table>
+        <thead><tr><th>客户姓名</th><th>电话</th><th>到店时间</th><th>门店</th><th>状态</th><th>通知</th><th>登记时间</th><th>操作</th></tr></thead>
+        <tbody>${data.map(x => `<tr>
+          <td>${x.customerName}</td><td>${x.phone}</td><td>${x.arriveTime.replace('T',' ')}</td>
+          <td>${storeName(x.storeTeamId)}</td><td>${tag(x.status)}</td>
+          <td>${x.notified?'✅已推送':(x.scheduledPush?'⏰待当天9点推送':'⚠️未推送')}</td>
+          <td>${new Date(x.createdAt).toLocaleString('zh-CN')}</td>
+          <td>${x.status==='pending' ? `<span class="action-link danger" onclick="cancelInvite('${x.id}')">取消</span>` : '-'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>`;
+}
+
+window.cancelInvite = async (id) => {
+  const inv = DB.invite.find(x => x.id === id);
+  if (!inv) return;
+  const reason = prompt('请输入取消原因（必填）：\n例如：客户临时有事 / 客户改约 / 客户不来了', '客户临时有事');
+  if (!reason || !reason.trim()) return alert('已取消操作（未填原因）');
+
+  inv.status = 'cancelled';
+  inv.cancelReason = reason.trim();
+  inv.cancelledAt = Date.now();
+  saveDB();
+  await updateCloudRecord('invite', id, { status: 'cancelled', cancelReason: reason.trim(), cancelledAt: inv.cancelledAt });
+
+  // 推送企业微信群（取消通知）
+  const url = DB.wecomConfig.storeWebhooks[inv.storeTeamId];
+  if (url) {
+    const content = `## ❌ 顾客邀约已取消\n` +
+      `> 客服团队：**${inv.csTeamName}**\n` +
+      `> 客户姓名：<font color="warning">${inv.customerName}</font>\n` +
+      `> 客户电话：${inv.phone}\n` +
+      `> 原预计到店：~~${inv.arriveTime.replace('T',' ')}~~\n` +
+      `> 取消原因：**${reason.trim()}**\n\n` +
+      `请市场线老师悉知，无需准备接待。`;
+    await sendWecomRaw(url, content);
+  }
+
+  showToast('已取消，门店群已收到通知', 'success');
+  renderPage('invite_list');
+};
+
+/* ============================================================
+ * 门店：待到店列表 + 服务记录
+ * ============================================================ */
+function renderStorePending(root, ses) {
+  const data = DB.invite.filter(x => x.storeTeamId === ses.teamId && x.status === 'pending').sort((a,b) => a.arriveTime.localeCompare(b.arriveTime));
+  root.innerHTML = `
+    <div class="card">
+      <h3>🔔 待到店客户</h3>
+      <div class="tip">客户到店后，请点击"已到店"填写服务详情；客户未到店请点击"未到店"。</div>
+      ${data.length===0 ? '<div class="empty">暂无待到店客户</div>' :
+      `<div class="table-wrap"><table>
+        <thead><tr><th>客户姓名</th><th>电话</th><th>到店时间</th><th>来源</th><th>备注</th><th>操作</th></tr></thead>
+        <tbody>${data.map(x => `<tr>
+          <td>${x.customerName}</td><td>${x.phone}</td><td>${x.arriveTime.replace('T',' ')}</td>
+          <td>${x.csTeamName}</td><td>${x.remark||'-'}</td>
+          <td>
+            <span class="action-link" onclick="markArrived('${x.id}')">已到店</span>
+            <span class="action-link danger" onclick="markNoShow('${x.id}')">未到店</span>
+          </td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>`;
+}
+window.markArrived = (id) => {
+  const inv = DB.invite.find(x => x.id === id);
+  if (!inv) return;
+  showStoreFeedbackModal(inv);
+};
+window.markNoShow = async (id) => {
+  if (!confirm('确认该客户未到店？')) return;
+  const inv = DB.invite.find(x => x.id === id);
+  inv.status = 'no_show';
+  inv.feedbackAt = Date.now();
+  saveDB();
+  await updateCloudRecord('invite', id, { status: 'no_show', feedbackAt: inv.feedbackAt });
+  renderPage('invite_pending');
+};
+
+function showStoreFeedbackModal(inv) {
+  const root = document.getElementById('modalRoot');
+  root.innerHTML = `
+    <div class="modal-mask">
+      <div class="modal">
+        <h3>✏️ 填写到店服务详情</h3>
+        <div class="form-grid">
+          <div class="form-group"><label>客户姓名</label><input value="${inv.customerName}" disabled/></div>
+          <div class="form-group"><label>客户电话</label><input value="${inv.phone}" disabled/></div>
+          <div class="form-group"><label>客户类型</label>
+            <select id="m_type"><option value="新客">新客</option><option value="老客">老客</option></select>
+          </div>
+          <div class="form-group"><label>是否操作（成交基础项）</label>
+            <select id="m_op"><option value="是">是</option><option value="否">否</option></select>
+          </div>
+          <div class="form-group"><label>操作金额</label><input type="number" id="m_opamt" placeholder="操作收费金额"/></div>
+          <div class="form-group"><label>是否成单（升单）</label>
+            <select id="m_close"><option value="否">否</option><option value="是">是</option></select>
+          </div>
+          <div class="form-group"><label>成单金额</label><input type="number" id="m_camt" placeholder="升单后的金额，无则填0"/></div>
+          <div class="form-group"><label>业绩贡献人（操作人）</label><input id="m_perf" value="${(getSession()&&getSession().userName)||''}" disabled/></div>
+          <div class="form-group" style="grid-column:1/-1"><label>备注顾客情况</label><textarea id="m_remark" rows="2"></textarea></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-sm btn-danger" onclick="closeModal()">取消</button>
+          <button class="btn btn-sm btn-success" onclick="saveStoreFeedback('${inv.id}')">保存并同步</button>
+        </div>
+      </div>
+    </div>`;
+}
+window.closeModal = () => document.getElementById('modalRoot').innerHTML = '';
+window.saveStoreFeedback = async (inviteId) => {
+  const inv = DB.invite.find(x => x.id === inviteId);
+  const customerType = document.getElementById('m_type').value;
+  const isOperated = document.getElementById('m_op').value;
+  const opAmount = +document.getElementById('m_opamt').value || 0;
+  const isClosed = document.getElementById('m_close').value;
+  const closedAmount = +document.getElementById('m_camt').value || 0;
+  const performer = document.getElementById('m_perf').value.trim();
+  const remark = document.getElementById('m_remark').value.trim();
+
+  inv.status = 'arrived';
+  inv.feedbackAt = Date.now();
+
+  // 同步到 store 表
+  const storeRec = {
+    id: uid(), teamId: inv.storeTeamId, date: today(),
+    inviteId: inv.id,
+    customerName: inv.customerName, phone: inv.phone, arriveTime: inv.arriveTime,
+    customerType, isOperated, opAmount, isClosed, closedAmount, performer, remark,
+    amount: opAmount + closedAmount,
+    createdAt: Date.now(),
+  };
+  DB.store.push(storeRec);
+  saveDB();
+  await updateCloudRecord('invite', inv.id, { status: 'arrived', feedbackAt: inv.feedbackAt });
+  await pushCloudRecord('store', storeRec);
+
+  // 推送到企业微信文档（留档提示）
+  await pushWecom(inv, 'archive', { customerType, isOperated, opAmount, isClosed, closedAmount, performer, remark });
+
+  closeModal();
+  afterSubmit('已保存并同步到门店服务记录');
+};
+
+/* ============================================================
+ * 门店：非客服到店顾客登记（不走客服邀约，门店直接录入）
+ * ============================================================ */
+function renderWalkIn(root, ses) {
+  const now = new Date();
+  const tz = now.getTimezoneOffset() * 60000;
+  const localISO = new Date(now - tz).toISOString().slice(0, 16);
+  root.innerHTML = `
+    <div class="card">
+      <h3>✍️ 非客服到店顾客登记 <span style="font-size:12px;color:#999">${ses.teamName}</span></h3>
+      <div class="tip">客户直接到店、未经客服邀约的，从这里录入。提交后<b>不会推送企业微信群</b>，仅写入门店服务记录。</div>
+
+      <div class="form-grid">
+        <div class="form-group"><label>客户姓名 *</label><input id="wi_name" placeholder="如 张哥"/></div>
+        <div class="form-group"><label>到店时间 *</label><input type="datetime-local" id="wi_time" value="${localISO}"/></div>
+        <div class="form-group"><label>到店门店</label><input value="${ses.teamName}" disabled/></div>
+        <div class="form-group"><label>客户类型 *</label>
+          <select id="wi_type" onchange="onWalkInTypeChange()">
+            <option value="新客">新客（转介绍）</option>
+            <option value="老客">老客</option>
+          </select>
+        </div>
+        <div class="form-group" id="wi_source_wrap">
+          <label>来源</label>
+          <input id="wi_source" value="转介绍" disabled/>
+        </div>
+        <div class="form-group hidden" id="wi_visit_wrap">
+          <label>第几次操作 *</label>
+          <select id="wi_visit">
+            <option value="2">第2次</option>
+            <option value="3">第3次</option>
+            <option value="4">第4次</option>
+            <option value="5">第5次</option>
+            <option value="6">第6次</option>
+            <option value="7">第7次</option>
+          </select>
+        </div>
+      </div>
+
+      <h3 style="margin-top:18px;font-size:14px;color:var(--brand-primary)">服务详情</h3>
+      <div class="form-grid">
+        <div class="form-group"><label>是否操作</label>
+          <select id="wi_op"><option value="是">是</option><option value="否">否</option></select>
+        </div>
+        <div class="form-group"><label>操作金额</label><input type="number" id="wi_opamt" placeholder="如 338"/></div>
+        <div class="form-group"><label>是否成单（升单）</label>
+          <select id="wi_close"><option value="否">否</option><option value="是">是</option></select>
+        </div>
+        <div class="form-group"><label>成单金额</label><input type="number" id="wi_camt" placeholder="无则填0"/></div>
+        <div class="form-group"><label>业绩贡献人（操作人）</label><input id="wi_perf" value="${ses.userName||''}" disabled/></div>
+        <div class="form-group" style="grid-column:1/-1"><label>备注</label><textarea id="wi_remark" rows="2" placeholder="顾客情况、特殊需求等"></textarea></div>
+      </div>
+
+      <button class="btn btn-sm btn-success" id="wi_save">提交登记</button>
+    </div>
+  `;
+
+  document.getElementById('wi_save').onclick = async () => {
+    const customerName = document.getElementById('wi_name').value.trim();
+    const arriveTime = document.getElementById('wi_time').value;
+    const customerType = document.getElementById('wi_type').value;
+    if (!customerName || !arriveTime) return alert('请填写客户姓名和到店时间');
+
+    const isNew = customerType === '新客';
+    const source = isNew ? '转介绍' : null;
+    const visitNo = isNew ? 1 : +document.getElementById('wi_visit').value;
+
+    const opAmount = +document.getElementById('wi_opamt').value || 0;
+    const isOperated = document.getElementById('wi_op').value;
+    const isClosed = document.getElementById('wi_close').value;
+    const closedAmount = +document.getElementById('wi_camt').value || 0;
+    const performer = document.getElementById('wi_perf').value.trim();
+    const remark = document.getElementById('wi_remark').value.trim();
+
+    const rec = {
+      id: uid(),
+      teamId: ses.teamId,
+      date: today(),
+      walkIn: true, // 标记自然到店
+      source: source || ('老客-第' + visitNo + '次'),
+      visitNo,
+      customerName,
+      phone: '',
+      arriveTime,
+      customerType,
+      isOperated, opAmount,
+      isClosed, closedAmount,
+      performer, remark,
+      amount: opAmount + closedAmount,
+      createdAt: Date.now(),
+    };
+
+    DB.store.push(rec);
+    saveDB();
+    await pushCloudRecord('store', rec);
+    // 按用户要求：不推送企业微信群
+
+    afterSubmit('已登记：' + customerName + ' · ' + (isNew ? '新客（转介绍）' : '老客第' + visitNo + '次'));
+  };
+}
+
+window.onWalkInTypeChange = () => {
+  const t = document.getElementById('wi_type').value;
+  const sourceWrap = document.getElementById('wi_source_wrap');
+  const visitWrap = document.getElementById('wi_visit_wrap');
+  if (t === '新客') {
+    sourceWrap.classList.remove('hidden');
+    visitWrap.classList.add('hidden');
+  } else {
+    sourceWrap.classList.add('hidden');
+    visitWrap.classList.remove('hidden');
+  }
+};
+
+function renderStoreList(root, ses) {
+  const data = DB.store.filter(x => x.teamId === ses.teamId).sort((a,b) => b.createdAt - a.createdAt);
+  root.innerHTML = `
+    <div class="card">
+      <h3>📋 门店服务记录</h3>
+      <div class="tip">数据请谨慎删除，总部会收到删除内容通知。</div>
+      ${data.length===0 ? '<div class="empty">暂无记录</div>' :
+      `<div class="table-wrap"><table>
+        <thead><tr><th>日期</th><th>客户姓名</th><th>到店时间</th><th>新/老</th><th>来源</th><th>是否操作</th><th>操作金额</th><th>是否成单</th><th>成单金额</th><th>合计</th><th>贡献人</th><th>备注</th><th>操作</th></tr></thead>
+        <tbody>${data.map(x => `<tr>
+          <td>${x.date}</td><td>${x.customerName||'-'}</td>
+          <td>${(x.arriveTime||'').replace('T',' ')}</td>
+          <td>${x.customerType}</td>
+          <td>${x.walkIn ? '<span class="tag tag-blue">非客服到店</span> ' + (x.source||'') : '<span class="tag tag-green">客服邀约</span>'}</td>
+          <td>${x.isOperated}</td>
+          <td>${fmtMoney(x.opAmount)}</td><td>${x.isClosed}</td>
+          <td>${fmtMoney(x.closedAmount)}</td><td><b>${fmtMoney(x.amount)}</b></td>
+          <td>${x.performer||'-'}</td><td>${x.remark||'-'}</td>
+          <td><span class="action-link danger" onclick="delStore('${x.id}')">删除</span></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>`;
+}
+
+window.delStore = async (id) => {
+  if(!confirm('数据请谨慎删除，总部会收到删除内容通知。\n\n确定删除？')) return;
+  const ses = getSession();
+  const rec = DB.store.find(x => x.id === id);
+  DB.store = DB.store.filter(x => x.id !== id);
+  saveDB();
+  await deleteCloudRecord('store', id);
+  if (rec) await notifyHQDelete('门店服务（顾客到店）数据', rec, ses);
+  renderPage('store_list');
+};
+
+/* ============================================================
+ * 管理总部：聚合计算
+ * ============================================================ */
+function aggregateByDate(startDate, endDate, teamFilter = {}) {
+  // teamFilter: {ad:teamId, cs:teamId, store:teamId} 任意维度筛选；空对象=全部
+  const inRange = (d) => (!startDate || d >= startDate) && (!endDate || d <= endDate);
+  const ad = DB.ad.filter(x => inRange(x.date) && (!teamFilter.ad || x.teamId === teamFilter.ad));
+  const cs = DB.cs.filter(x => inRange(x.date) && (!teamFilter.cs || x.teamId === teamFilter.cs));
+  const store = DB.store.filter(x => inRange(x.date) && (!teamFilter.store || x.teamId === teamFilter.store));
+  // 邀约（用于到店数）
+  const invite = DB.invite.filter(x => inRange(fmtDate(x.arriveTime)));
+  return { ad, cs, store, invite };
+}
+
+function calcMetrics({ad, cs, store, invite}) {
+  const adCost = ad.reduce((s,x) => s + (x.cost||0), 0);
+  const addFans = ad.reduce((s,x) => s + (x.addFans||0), 0);
+  const costPerFan = safeDiv(adCost, addFans);
+  const depositCount = cs.reduce((s,x) => s + (x.depositCount||0), 0);
+  const depositCost = safeDiv(adCost, depositCount); // 定金成本=广告消耗/定金数
+
+  // 新老客拆分
+  const newCustomers = store.filter(x => x.customerType === '新客');
+  const oldCustomers = store.filter(x => x.customerType === '老客');
+  const newArriveCount = newCustomers.length;          // 新客到店数（计入到店成本分母）
+  const oldArriveCount = oldCustomers.length;          // 老客到店数（仅展示，不计成本）
+  const arriveCount = newArriveCount;                  // 到店数 = 仅新客到店
+  const arriveCost = safeDiv(adCost, newArriveCount);  // 到店成本 = 广告消耗 / 新客到店
+
+  // 操作 / 成单（仅基于新客）
+  const newCount = newCustomers.length;
+  const opCount = newCustomers.filter(x => x.isOperated === '是').length;
+  const opRate = safeDiv(opCount, newCount) * 100;
+  const opCost = safeDiv(adCost, opCount);
+  const closeCount = newCustomers.filter(x => x.isClosed === '是').length;
+  const closeRate = safeDiv(closeCount, newCount) * 100;
+  const closeCost = safeDiv(adCost, closeCount);
+
+  // 营业额拆分（按客户类型）
+  const newOpAmount = newCustomers.reduce((s,x) => s + (x.opAmount||0), 0);
+  const newCloseAmount = newCustomers.reduce((s,x) => s + (x.closedAmount||0), 0);
+  const newRevenue = newOpAmount + newCloseAmount;     // 新客营业额
+  const oldOpAmount = oldCustomers.reduce((s,x) => s + (x.opAmount||0), 0);
+  const oldCloseAmount = oldCustomers.reduce((s,x) => s + (x.closedAmount||0), 0);
+  const oldRevenue = oldOpAmount + oldCloseAmount;     // 老客营业额
+  const opAmount = newOpAmount + oldOpAmount;          // 总操作金额
+  const closeAmount = newCloseAmount + oldCloseAmount; // 总成单金额
+  const revenue = newRevenue + oldRevenue;             // 总营业额
+  const roi = safeDiv(revenue, adCost);
+
+  return {
+    adCost, addFans, costPerFan,
+    depositCount, depositCost,
+    arriveCount, arriveCost,
+    newArriveCount, oldArriveCount,
+    newCount, opCount, opRate, opCost,
+    closeCount, closeCost, closeRate, closeAmount,
+    opAmount, revenue, roi,
+    newRevenue, oldRevenue, newOpAmount, newCloseAmount, oldOpAmount, oldCloseAmount,
+  };
+}
+
+/* ============================================================
+ * 管理总部：数据看板（图表）
+ * ============================================================ */
+let chartInstances = [];
+function destroyCharts() { chartInstances.forEach(c => c.destroy()); chartInstances = []; }
+
+function renderHQDashboard(root) {
+  destroyCharts();
+  // 默认最近30天
+  const end = today();
+  const start = fmtDate(new Date(Date.now() - 29*86400000));
+  root.innerHTML = `
+    <div class="card">
+      <h3>📈 数据看板（最近30天）</h3>
+      <div class="toolbar">
+        <input type="date" id="db_start" value="${start}"/>
+        <span style="line-height:32px">至</span>
+        <input type="date" id="db_end" value="${end}"/>
+        <button class="btn btn-sm" onclick="renderHQDashboard(document.getElementById('pageContent'))">刷新</button>
+      </div>
+      <div id="kpi_zone"></div>
+      <div class="chart-grid" style="margin-top:20px">
+        <div class="card"><h3>每日广告消耗 vs 营业额</h3><canvas id="chart1" height="120"></canvas></div>
+        <div class="card"><h3>加粉/定金/到店漏斗</h3><canvas id="chart2" height="120"></canvas></div>
+        <div class="card"><h3>每日 ROI 走势</h3><canvas id="chart3" height="120"></canvas></div>
+        <div class="card"><h3>各团队广告消耗占比</h3><canvas id="chart4" height="120"></canvas></div>
+      </div>
+    </div>`;
+  const s = document.getElementById('db_start').value;
+  const e = document.getElementById('db_end').value;
+  const agg = aggregateByDate(s, e);
+  const m = calcMetrics(agg);
+
+  // KPI
+  document.getElementById('kpi_zone').innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi"><div class="label">广告消耗</div><div class="value">${fmtMoney(m.adCost)}</div></div>
+      <div class="kpi blue"><div class="label">加粉人数 / 加粉成本</div><div class="value">${fmtNum(m.addFans)} / ${fmtMoney(m.costPerFan)}</div></div>
+      <div class="kpi orange"><div class="label">定金数 / 定金成本</div><div class="value">${fmtNum(m.depositCount)} / ${fmtMoney(m.depositCost)}</div></div>
+      <div class="kpi purple"><div class="label">新客到店 / 到店成本</div><div class="value">${fmtNum(m.newArriveCount)} / ${fmtMoney(m.arriveCost)}</div></div>
+      <div class="kpi silver"><div class="label">老客到店数</div><div class="value">${fmtNum(m.oldArriveCount)}</div></div>
+      <div class="kpi green"><div class="label">操作数 / 操作率</div><div class="value">${fmtNum(m.opCount)} / ${fmtPct(m.opRate)}</div></div>
+      <div class="kpi red"><div class="label">成单数 / 成单率</div><div class="value">${fmtNum(m.closeCount)} / ${fmtPct(m.closeRate)}</div></div>
+      <div class="kpi blue"><div class="label">新客营业额</div><div class="value">${fmtMoney(m.newRevenue)}</div></div>
+      <div class="kpi orange"><div class="label">老客营业额</div><div class="value">${fmtMoney(m.oldRevenue)}</div></div>
+      <div class="kpi"><div class="label">总营业额</div><div class="value">${fmtMoney(m.revenue)}</div></div>
+      <div class="kpi green"><div class="label">ROI</div><div class="value">${m.roi.toFixed(2)}</div></div>
+    </div>`;
+
+  // 按日聚合
+  const dates = [];
+  const cur = new Date(s);
+  const last = new Date(e);
+  while (cur <= last) { dates.push(fmtDate(cur)); cur.setDate(cur.getDate()+1); }
+  const dayData = dates.map(d => calcMetrics(aggregateByDate(d, d)));
+
+  chartInstances.push(new Chart(document.getElementById('chart1'), {
+    type: 'bar',
+    data: {
+      labels: dates,
+      datasets: [
+        { label: '广告消耗', data: dayData.map(x => x.adCost), backgroundColor: '#1a3a8a' },
+        { label: '新客营业额', data: dayData.map(x => x.newRevenue), backgroundColor: '#2e5dd6' },
+        { label: '老客营业额', data: dayData.map(x => x.oldRevenue), backgroundColor: '#e6a23c' },
+      ],
+    },
+    options: { responsive: true, plugins: { legend: { position: 'top' } } },
+  }));
+  chartInstances.push(new Chart(document.getElementById('chart2'), {
+    type: 'bar',
+    data: {
+      labels: ['加粉','定金','新客到店','操作','成单'],
+      datasets: [{
+        label: '人数',
+        data: [m.addFans, m.depositCount, m.newArriveCount, m.opCount, m.closeCount],
+        backgroundColor: ['#1a3a8a','#2e5dd6','#5a78c8','#8b94a8','#c8d0db'],
+      }],
+    },
+  }));
+  chartInstances.push(new Chart(document.getElementById('chart3'), {
+    type: 'line',
+    data: { labels: dates, datasets: [{ label: 'ROI', data: dayData.map(x => +x.roi.toFixed(2)),
+      borderColor: '#1a3a8a', backgroundColor: 'rgba(26,58,138,.15)', fill: true, tension: .3 }] },
+  }));
+
+  const adTeams = teamsByRole('ad');
+  chartInstances.push(new Chart(document.getElementById('chart4'), {
+    type: 'doughnut',
+    data: {
+      labels: adTeams.map(t => t.name),
+      datasets: [{ data: adTeams.map(t => DB.ad.filter(a => a.teamId === t.id && a.date >= s && a.date <= e).reduce((sum,x) => sum+x.cost, 0)),
+        backgroundColor: ['#1a3a8a','#2e5dd6','#5a78c8','#8b94a8','#c8d0db'] }],
+    },
+  }));
+}
+
+/* ============================================================
+ * 管理总部：数据报表（指标合计 + 按团队）
+ * ============================================================ */
+function renderHQReport(root) {
+  const end = today();
+  const start = fmtDate(new Date(Date.now() - 29*86400000));
+  root.innerHTML = `
+    <div class="card">
+      <h3>📊 数据报表</h3>
+      <div class="toolbar">
+        <input type="date" id="rp_start" value="${start}"/>
+        <span style="line-height:32px">至</span>
+        <input type="date" id="rp_end" value="${end}"/>
+        <button class="btn btn-sm" onclick="doReport()">生成</button>
+        <button class="btn btn-sm btn-success" onclick="exportReport()">导出CSV</button>
+      </div>
+      <div id="rp_total"></div>
+      <h3 style="margin-top:24px">按团队拆分</h3>
+      <div id="rp_teams"></div>
+    </div>`;
+  doReport();
+}
+window.doReport = () => {
+  const s = document.getElementById('rp_start').value;
+  const e = document.getElementById('rp_end').value;
+  const m = calcMetrics(aggregateByDate(s, e));
+  const cols = [
+    ['广告消耗', fmtMoney(m.adCost)], ['加粉人数', fmtNum(m.addFans)], ['加粉成本', fmtMoney(m.costPerFan)],
+    ['定金数', fmtNum(m.depositCount)], ['定金成本', fmtMoney(m.depositCost)],
+    ['新客到店数', fmtNum(m.newArriveCount)], ['老客到店数', fmtNum(m.oldArriveCount)], ['到店成本（按新客）', fmtMoney(m.arriveCost)],
+    ['操作数', fmtNum(m.opCount)], ['操作率', fmtPct(m.opRate)], ['新顾客操作成本', fmtMoney(m.opCost)],
+    ['成单数', fmtNum(m.closeCount)], ['成单成本', fmtMoney(m.closeCost)], ['成单率', fmtPct(m.closeRate)], ['成单金额', fmtMoney(m.closeAmount)],
+    ['新客营业额', fmtMoney(m.newRevenue)], ['老客营业额', fmtMoney(m.oldRevenue)], ['总营业额', fmtMoney(m.revenue)],
+    ['ROI', m.roi.toFixed(2)],
+  ];
+  document.getElementById('rp_total').innerHTML = `
+    <div class="table-wrap"><table>
+      <thead><tr><th>指标</th><th>数值</th></tr></thead>
+      <tbody>${cols.map(([k,v]) => `<tr><td>${k}</td><td><b>${v}</b></td></tr>`).join('')}</tbody>
+    </table></div>`;
+
+  // 按投放团队拆分
+  const adTeams = teamsByRole('ad');
+  const csTeams = teamsByRole('cs');
+  const storeTeams = teamsByRole('store');
+  const rows = [];
+  // 营销线维度
+  adTeams.forEach(t => {
+    const sub = aggregateByDate(s, e, { ad: t.id });
+    const sm = calcMetrics(sub);
+    rows.push([`【营销】${t.name}`, fmtMoney(sm.adCost), fmtNum(sm.addFans), fmtMoney(sm.costPerFan), '-', '-', '-', '-', '-', '-']);
+  });
+  csTeams.forEach(t => {
+    const sub = aggregateByDate(s, e, { cs: t.id });
+    const sm = calcMetrics(sub);
+    rows.push([`【客服】${t.name}`, '-', '-', '-', fmtNum(sm.depositCount), '-', '-', '-', '-', '-']);
+  });
+  storeTeams.forEach(t => {
+    const sub = aggregateByDate(s, e, { store: t.id });
+    const sm = calcMetrics(sub);
+    rows.push([`【门店】${t.name}`, '-', '-', '-', '-', fmtNum(sm.newArriveCount), fmtNum(sm.oldArriveCount), fmtNum(sm.closeCount), fmtMoney(sm.newRevenue), fmtMoney(sm.oldRevenue)]);
+  });
+  document.getElementById('rp_teams').innerHTML = `
+    <div class="table-wrap"><table>
+      <thead><tr><th>团队</th><th>广告消耗</th><th>加粉</th><th>加粉成本</th><th>定金数</th><th>新客到店</th><th>老客到店</th><th>成单数</th><th>新客营业额</th><th>老客营业额</th></tr></thead>
+      <tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>`;
+
+};
+window.exportReport = () => {
+  const s = document.getElementById('rp_start').value;
+  const e = document.getElementById('rp_end').value;
+  const m = calcMetrics(aggregateByDate(s, e));
+  const lines = [
+    '指标,数值',
+    `广告消耗,${m.adCost}`, `加粉人数,${m.addFans}`, `加粉成本,${m.costPerFan.toFixed(2)}`,
+    `定金数,${m.depositCount}`, `定金成本,${m.depositCost.toFixed(2)}`,
+    `新客到店数,${m.newArriveCount}`, `老客到店数,${m.oldArriveCount}`, `到店成本（按新客）,${m.arriveCost.toFixed(2)}`,
+    `操作数,${m.opCount}`, `操作率,${m.opRate.toFixed(2)}%`, `新顾客操作成本,${m.opCost.toFixed(2)}`,
+    `成单数,${m.closeCount}`, `成单成本,${m.closeCost.toFixed(2)}`, `成单率,${m.closeRate.toFixed(2)}%`, `成单金额,${m.closeAmount.toFixed(2)}`,
+    `新客营业额,${m.newRevenue.toFixed(2)}`, `老客营业额,${m.oldRevenue.toFixed(2)}`, `总营业额,${m.revenue.toFixed(2)}`,
+    `ROI,${m.roi.toFixed(2)}`,
+  ];
+  const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `报表_${s}_${e}.csv`; a.click();
+};
+
+/* ============================================================
+ * 管理总部：每日明细
+ * ============================================================ */
+function renderHQDetail(root) {
+  const end = today();
+  const start = fmtDate(new Date(Date.now() - 13*86400000));
+  root.innerHTML = `
+    <div class="card">
+      <h3>📅 每日明细</h3>
+      <div class="toolbar">
+        <input type="date" id="dt_start" value="${start}"/>
+        <span style="line-height:32px">至</span>
+        <input type="date" id="dt_end" value="${end}"/>
+        <button class="btn btn-sm" onclick="doDetail()">查询</button>
+      </div>
+      <div id="dt_table"></div>
+    </div>`;
+  doDetail();
+}
+window.doDetail = () => {
+  const s = document.getElementById('dt_start').value;
+  const e = document.getElementById('dt_end').value;
+  const dates = [];
+  const cur = new Date(s); const last = new Date(e);
+  while (cur <= last) { dates.push(fmtDate(cur)); cur.setDate(cur.getDate()+1); }
+  const rows = dates.reverse().map(d => {
+    const m = calcMetrics(aggregateByDate(d, d));
+    return `<tr>
+      <td>${d}</td>
+      <td>${fmtMoney(m.adCost)}</td><td>${fmtNum(m.addFans)}</td><td>${fmtMoney(m.costPerFan)}</td>
+      <td>${fmtNum(m.depositCount)}</td>
+      <td>${fmtNum(m.newArriveCount)}</td><td>${fmtNum(m.oldArriveCount)}</td>
+      <td>${fmtNum(m.opCount)}</td><td>${fmtNum(m.closeCount)}</td>
+      <td>${fmtMoney(m.newRevenue)}</td><td>${fmtMoney(m.oldRevenue)}</td>
+      <td><b>${fmtMoney(m.revenue)}</b></td>
+      <td><b>${m.roi.toFixed(2)}</b></td>
+    </tr>`;
+  });
+  document.getElementById('dt_table').innerHTML = `
+    <div class="table-wrap"><table>
+      <thead><tr><th>日期</th><th>广告消耗</th><th>加粉</th><th>加粉成本</th><th>定金</th><th>新客到店</th><th>老客到店</th><th>操作</th><th>成单</th><th>新客营业额</th><th>老客营业额</th><th>总营业额</th><th>ROI</th></tr></thead>
+      <tbody>${rows.join('')}</tbody>
+    </table></div>`;
+};
+
+/* ============================================================
+ * 管理总部：全部邀约
+ * ============================================================ */
+function renderHQInvite(root) {
+  const data = [...DB.invite].sort((a,b) => b.createdAt - a.createdAt);
+  const tag = s => s==='arrived' ? '<span class="tag tag-green">已到店</span>'
+                : s==='no_show' ? '<span class="tag tag-red">未到店</span>'
+                : s==='cancelled' ? '<span class="tag tag-red">已取消</span>'
+                : '<span class="tag tag-orange">待反馈</span>';
+  root.innerHTML = `
+    <div class="card">
+      <h3>📞 全部邀约（共 ${data.length} 条）</h3>
+      ${data.length===0 ? '<div class="empty">暂无</div>' :
+      `<div class="table-wrap"><table>
+        <thead><tr><th>客户</th><th>电话</th><th>到店时间</th><th>客服</th><th>门店</th><th>状态</th><th>推送</th><th>备注</th></tr></thead>
+        <tbody>${data.map(x => `<tr>
+          <td>${x.customerName}</td><td>${x.phone}</td><td>${(x.arriveTime||'').replace('T',' ')}</td>
+          <td>${x.csTeamName}</td><td>${DB.teams[x.storeTeamId]?.name||'-'}</td>
+          <td>${tag(x.status)}</td>
+          <td>${x.notified?'✅':(x.scheduledPush?'⏰':'⚠️')}</td>
+          <td style="font-size:11px;color:#888">${x.cancelReason ? '取消：' + x.cancelReason : (x.remindedAt ? '⏰已提醒' : (x.remark || '-'))}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>`;
+}
+
+/* ============================================================
+ * v6 总部：用户审批管理
+ * ============================================================ */
+async function renderHQUsers(root) {
+  root.innerHTML = `<div class="card"><h3>👥 用户审批管理</h3><div class="empty">加载中...</div></div>`;
+  const res = await api('users-list');
+  if (!res.ok) {
+    root.innerHTML = `<div class="card"><h3>👥 用户审批管理</h3><div class="empty">加载失败：${res.error||''}</div></div>`;
+    return;
+  }
+  const ROLE_LABEL_MAP = { ad: '营销线', cs: '客服销售线', store: '市场线', hq: '总部服务线' };
+  const teamName = id => (DB.teams[id] && DB.teams[id].name) || id;
+  const statusTag = s => s==='approved' ? '<span class="tag tag-green">已通过</span>'
+                      : s==='pending' ? '<span class="tag tag-orange">待审批</span>'
+                      : s==='rejected' ? '<span class="tag tag-red">已拒绝</span>'
+                      : '<span class="tag tag-red">已停用</span>';
+
+  const pending = res.users.filter(u => u.status === 'pending');
+  const others = res.users.filter(u => u.status !== 'pending');
+
+  root.innerHTML = `
+    <div class="card">
+      <h3>⏳ 待审批 (${pending.length})</h3>
+      ${pending.length === 0 ? '<div class="empty">暂无待审批用户</div>' :
+      `<div class="table-wrap"><table>
+        <thead><tr><th>用户名</th><th>真实姓名</th><th>业务线</th><th>部门</th><th>注册时间</th><th>操作</th></tr></thead>
+        <tbody>${pending.map(u => `<tr>
+          <td>${u.username}</td><td>${u.realName||'-'}</td>
+          <td>${ROLE_LABEL_MAP[u.role]||u.role}</td>
+          <td>${teamName(u.teamId)}</td>
+          <td>${new Date(u.createdAt).toLocaleString('zh-CN')}</td>
+          <td>
+            <span class="action-link" onclick="approveUser('${u.id}', '${u.realName}')">通过</span>
+            <span class="action-link danger" onclick="rejectUser('${u.id}', '${u.realName}')">拒绝</span>
+          </td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>
+
+    <div class="card">
+      <h3>👤 全部账号 (${others.length})</h3>
+      ${others.length === 0 ? '<div class="empty">暂无</div>' :
+      `<div class="table-wrap"><table>
+        <thead><tr><th>用户名</th><th>真实姓名</th><th>业务线</th><th>部门</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>${others.map(u => `<tr>
+          <td>${u.username}</td><td>${u.realName||'-'}</td>
+          <td>${ROLE_LABEL_MAP[u.role]||u.role}</td>
+          <td>${teamName(u.teamId)}</td>
+          <td>${statusTag(u.status)}${u.rejectReason?'<div style="font-size:11px;color:#999">'+u.rejectReason+'</div>':''}</td>
+          <td>
+            ${u.status === 'approved' ? `<span class="action-link danger" onclick="toggleUser('${u.id}', 'disabled')">停用</span>` : ''}
+            ${u.status === 'disabled' ? `<span class="action-link" onclick="toggleUser('${u.id}', 'approved')">启用</span>` : ''}
+            ${u.status === 'rejected' ? `<span class="action-link" onclick="approveUser('${u.id}', '${u.realName}')">改为通过</span>` : ''}
+            ${u.username !== 'admin' ? `<span class="action-link danger" onclick="deleteUser('${u.id}', '${u.username}')">删除</span>` : ''}
+          </td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>
+  `;
+}
+
+window.approveUser = async (id, name) => {
+  if (!confirm('通过用户「' + (name||'') + '」的注册申请？')) return;
+  const res = await api('users-approve', { id });
+  if (res.ok) { showToast('已通过审批', 'success'); renderHQUsers(document.getElementById('pageContent')); }
+  else alert('失败：' + res.error);
+};
+window.rejectUser = async (id, name) => {
+  const reason = prompt('拒绝「' + (name||'') + '」的原因（必填）：', '部门不符');
+  if (!reason) return;
+  const res = await api('users-reject', { id, reason });
+  if (res.ok) { showToast('已拒绝', 'success'); renderHQUsers(document.getElementById('pageContent')); }
+  else alert('失败：' + res.error);
+};
+window.toggleUser = async (id, status) => {
+  if (!confirm('确定' + (status==='disabled' ? '停用' : '启用') + '此账号？')) return;
+  const res = await api('users-toggle', { id, status });
+  if (res.ok) { showToast('已更新', 'success'); renderHQUsers(document.getElementById('pageContent')); }
+  else alert('失败：' + res.error);
+};
+window.deleteUser = async (id, username) => {
+  if (!confirm('确定删除用户「' + username + '」？此操作不可恢复。')) return;
+  const res = await api('users-delete', { id });
+  if (res.ok) { showToast('已删除', 'success'); renderHQUsers(document.getElementById('pageContent')); }
+  else alert('失败：' + res.error);
+};
+
+/* ============================================================
+ * 管理总部：系统设置（密码、企业微信webhook）
+ * ============================================================ */
+function renderHQSettings(root) {
+  const teams = Object.entries(DB.teams);
+  const stores = teamsByRole('store');
+  root.innerHTML = `
+    <div class="card">
+      <h3>⚙️ 团队密码管理</h3>
+      <div class="tip">修改密码后请通知对应团队成员；只有管理总部可修改。</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>团队ID</th><th>团队名称</th><th>角色</th><th>当前密码</th><th>操作</th></tr></thead>
+        <tbody>${teams.map(([id,t]) => `<tr>
+          <td>${id}</td><td>${t.name}</td><td>${ROLE_LABEL[t.role]}</td>
+          <td><input id="pwd_${id}" value="${t.password}" style="padding:6px;border:1px solid #ddd;border-radius:4px"/></td>
+          <td><button class="btn btn-sm btn-success" onclick="updatePwd('${id}')">保存</button></td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>
+
+    <div class="card">
+      <h3>🔔 企业微信群机器人配置</h3>
+      <div class="tip">每个门店配置一个企业微信群机器人 webhook，客服提交邀约时会自动推送到对应门店的群。<br>
+      获取方式：企业微信群 → 群设置 → 群机器人 → 添加机器人 → 复制 webhook 地址。</div>
+      ${stores.map(s => `
+        <div class="form-group">
+          <label>${s.name} 群机器人 Webhook</label>
+          <input id="wh_${s.id}" value="${DB.wecomConfig.storeWebhooks[s.id]||''}" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxxx"/>
+        </div>`).join('')}
+      <div class="form-group">
+        <label>客户档案企业微信文档地址（选填）</label>
+        <input id="doc_url" value="${DB.wecomConfig.docArchiveUrl||''}" placeholder="https://doc.weixin.qq.com/smartsheet/xxxxx 留空则推送中不显示"/>
+        <div style="font-size:11px;color:#999;margin-top:4px">建议在企业微信群里新建一个智能表格，复制分享链接到这里。每条客户档案推送会自动附带此链接，门店点开就能录入档案。</div>
+      </div>
+      <div class="form-group">
+        <label>总部数据简报群 Webhook（每日 9:00 自动推送昨日数据汇总）</label>
+        <input id="hq_webhook" value="${DB.wecomConfig.hqWebhook||''}" placeholder="留空则使用市场线1店的 webhook"/>
+        <div style="font-size:11px;color:#999;margin-top:4px">建议总部单独建一个高管群，把这个 webhook 填进来。每天上午 9 点自动推送昨日核心数据（消耗/到店/营业额/ROI）。</div>
+      </div>
+      <div class="form-group">
+        <label>未反馈提醒时间（24小时制，默认19=晚7点）</label>
+        <input type="number" id="rem_hour" value="${DB.wecomConfig.reminderHour}" min="0" max="23"/>
+      </div>
+      <button class="btn btn-sm btn-success" onclick="saveWecomConfig()">保存配置</button>
+      <button class="btn btn-sm btn-warning" style="margin-left:10px" onclick="testWecom()">测试推送</button>
+      <button class="btn btn-sm" style="margin-left:10px;background:#909399" onclick="applyDefaultWebhook()">一键填入默认 webhook</button>
+    </div>
+
+    <div class="card">
+      <h3>🗄️ 数据管理</h3>
+      <div class="tip">⚠️ 紧急工具：如果之前在某台设备上录入的数据云端没看到，请在<b>那台原设备</b>上登录后点击下方按钮把本地缓存推到云端。</div>
+      <button class="btn btn-sm btn-warning" onclick="syncLocalToCloud()">📤 把本机数据同步到云端</button>
+      <button class="btn btn-sm" style="margin-left:10px;background:#909399" onclick="diagnoseLink()">🔬 链路诊断</button>
+      <button class="btn btn-sm" style="margin-left:10px" onclick="exportAll()">导出全部数据(JSON)</button>
+      <button class="btn btn-sm btn-warning" style="margin-left:10px" onclick="importAll()">导入数据</button>
+      <button class="btn btn-sm btn-danger" style="margin-left:10px" onclick="resetAll()">重置全部数据</button>
+      <pre id="diag_out" style="margin-top:12px;padding:10px;background:#f4f6fb;border-radius:6px;font-size:12px;max-height:400px;overflow:auto;display:none"></pre>
+    </div>`;
+}
+
+window.diagnoseLink = async () => {
+  const out = document.getElementById('diag_out');
+  out.style.display = 'block';
+  const lines = [];
+  const log = (s) => { lines.push(s); out.textContent = lines.join('\n'); };
+
+  log('=== 仕净系统链路诊断 ===');
+  log('时间: ' + new Date().toLocaleString());
+  log('版本: v5.0 (VPS)');
+  log('');
+  log('1. 后端连接状态');
+  log('   - CLOUD_READY: ' + CLOUD_READY);
+  log('   - API_BASE: ' + (API_BASE || '同源'));
+
+  log('');
+  log('2. 测试 GET /api/diagnose');
+  try {
+    const t0 = Date.now();
+    const res = await api('diagnose');
+    log('   ✅ 耗时: ' + (Date.now()-t0) + 'ms');
+    log('   - ok: ' + res.ok);
+    log('   - counts: ' + JSON.stringify(res.counts));
+  } catch (e) {
+    log('   ❌ FAILED: ' + e.message);
+  }
+
+  log('');
+  log('3. 测试 POST /api/list');
+  try {
+    const t0 = Date.now();
+    const res = await api('list');
+    log('   ✅ 耗时: ' + (Date.now()-t0) + 'ms');
+    if (res.ok && res.data) {
+      const d = res.data;
+      log('   - 数据量: ad=' + d.ad.length + ', cs=' + d.cs.length + ', store=' + d.store.length + ', invite=' + d.invite.length);
+    }
+  } catch (e) {
+    log('   ❌ FAILED: ' + e.message);
+  }
+
+  log('');
+  log('4. 测试 POST /api/add（写入测试数据）');
+  try {
+    const testRec = { id: 'diag_'+Date.now(), teamId: 'diag', date: '2026-05-22', cost: 1, addFans: 1, costPerFan: 1, createdAt: Date.now(), _diag: true };
+    const res = await api('add', { collection: 'ad', record: testRec });
+    log('   ✅ 写入: ' + JSON.stringify(res));
+    await api('delete', { collection: 'ad', id: testRec.id });
+    log('   已软删除测试数据 ✅');
+  } catch (e) {
+    log('   ❌ FAILED: ' + e.message);
+  }
+
+  log('');
+  log('5. 本地 LocalStorage 状态');
+  log('   - DB.ad: ' + DB.ad.length + ' 条');
+  log('   - DB.cs: ' + DB.cs.length + ' 条');
+  log('   - DB.store: ' + DB.store.length + ' 条');
+  log('   - DB.invite: ' + DB.invite.length + ' 条');
+
+  log('');
+  log('=== 诊断结束 ===');
+};
+
+window.syncLocalToCloud = async () => {
+  if (!CLOUD_READY) return alert('后端未就绪，请刷新页面后重试');
+  if (!confirm('将本浏览器 LocalStorage 中的所有业务数据推送到服务器。\n\n服务器已有相同 id 的不会重复（按 id 去重）。\n\n确定继续？')) return;
+  const payload = { ad: DB.ad, cs: DB.cs, store: DB.store, invite: DB.invite };
+  const res = await api('import', payload);
+  showToast(`同步完成：上传 ${res.success || 0} 条，跳过 ${res.skipped || 0} 条`, 'success', 3000);
+  await pullCloudData();
+  saveDB();
+  renderPage('hq_dashboard');
+};
+window.updatePwd = async (id) => {
+  const v = document.getElementById('pwd_'+id).value.trim();
+  if (!v) return alert('密码不能为空');
+  DB.teams[id].password = v; saveDB();
+  await pushCloudConfig();
+  alert('已更新');
+};
+window.saveWecomConfig = async () => {
+  teamsByRole('store').forEach(s => {
+    DB.wecomConfig.storeWebhooks[s.id] = document.getElementById('wh_'+s.id).value.trim();
+  });
+  DB.wecomConfig.docArchiveUrl = document.getElementById('doc_url').value.trim();
+  DB.wecomConfig.hqWebhook = (document.getElementById('hq_webhook')||{}).value ? document.getElementById('hq_webhook').value.trim() : (DB.wecomConfig.hqWebhook||'');
+  DB.wecomConfig.reminderHour = +document.getElementById('rem_hour').value || 19;
+  saveDB();
+  await pushCloudConfig();
+  alert('已保存');
+};
+window.testWecom = async () => {
+  const stores = teamsByRole('store');
+  for (const s of stores) {
+    const url = DB.wecomConfig.storeWebhooks[s.id];
+    if (!url) continue;
+    const ok = await sendWecomRaw(url, `🦾 [系统测试] 这是来自内部管理系统的测试消息（${s.name}），如收到说明 webhook 配置成功。`);
+    console.log(s.name, ok);
+  }
+  alert('已尝试推送，请到群里确认是否收到');
+};
+window.applyDefaultWebhook = () => {
+  const DEFAULT_WH = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e4b195fe-ca8a-4514-b2f3-94e4ac8fe2e7';
+  teamsByRole('store').forEach(s => {
+    const el = document.getElementById('wh_'+s.id);
+    if (el) el.value = DEFAULT_WH;
+  });
+  alert('已填入默认 webhook，请记得点击"保存配置"持久化');
+};
+window.exportAll = () => {
+  const blob = new Blob([JSON.stringify(DB, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `系统数据备份_${today()}.json`; a.click();
+};
+window.importAll = () => {
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='.json';
+  inp.onchange = (e) => {
+    const f = e.target.files[0]; const r = new FileReader();
+    r.onload = () => { try { DB = JSON.parse(r.result); saveDB(); alert('导入成功'); location.reload(); } catch { alert('文件格式错误'); } };
+    r.readAsText(f);
+  };
+  inp.click();
+};
+window.resetAll = () => {
+  if (!confirm('⚠️ 此操作将清除所有业务数据（包括邀约/投放/客服/门店），密码与webhook配置将保留。确定继续？')) return;
+  DB.ad = []; DB.cs = []; DB.store = []; DB.invite = []; DB.reminderLog = [];
+  saveDB(); alert('已重置');
+};
+
+/* ============================================================
+ * 企业微信群机器人推送
+ * ============================================================ */
+async function sendWecomRaw(webhookUrl, content) {
+  if (!webhookUrl) { console.warn('[wecom] 未配置 webhook'); return false; }
+  return await callWecomCloudFunction(webhookUrl, content);
+}
+
+async function pushWecom(invite, type, extra) {
+  const url = DB.wecomConfig.storeWebhooks[invite.storeTeamId];
+  if (!url) return false;
+  let content;
+  if (type === 'arrival') {
+    content = `## 🦾 顾客即将到店通知
+> 客户姓名：<font color="info">${invite.customerName}</font>
+> 客户电话：${invite.phone}
+> 预计到店：**${invite.arriveTime.replace('T',' ')}**
+> 备注：${invite.remark || '无'}
+
+请门店老师做好接待准备，到店后请在系统【🔔 待到店客户】中点击"已到店"并填写服务详情。`;
+  } else if (type === 'remind') {
+    content = `## ⏰ 顾客未反馈提醒（${DB.wecomConfig.reminderHour}点）
+> 客户姓名：**${invite.customerName}**
+> 客户电话：${invite.phone}
+> 预计到店：${invite.arriveTime.replace('T',' ')}
+
+该客户客服已邀约但门店尚未反馈，请门店尽快确认是否到店并在系统中提交。`;
+  } else if (type === 'archive') {
+    const archiveLine = DB.wecomConfig.docArchiveUrl
+      ? `\n\n> 📌 请在【企业微信文档】中归档：${DB.wecomConfig.docArchiveUrl}`
+      : '';
+    content = `## 📁 客户档案留档
+> 姓名：**${invite.customerName}**
+> 电话：${invite.phone}
+> 客户类型：${extra.customerType}
+> 是否操作：${extra.isOperated} | 操作金额：¥${extra.opAmount}
+> 是否成单：${extra.isClosed} | 成单金额：¥${extra.closedAmount}
+> 业绩贡献人：${extra.performer || '-'}
+> 备注：${extra.remark || '-'}${archiveLine}`;
+  }
+  return await sendWecomRaw(url, content);
+}
+
+/* ============================================================
+ * 7点未反馈提醒（前端定时检查）
+ * ============================================================ */
+function checkPendingReminders() {
+  const now = new Date();
+  const targetHour = DB.wecomConfig.reminderHour;
+  if (now.getHours() < targetHour) return;
+  const todayStr = today();
+  DB.invite.forEach(async (inv) => {
+    if (inv.status !== 'pending') return;
+    if (inv.remindedAt && fmtDate(inv.remindedAt) === todayStr) return;
+    const arriveDate = fmtDate(inv.arriveTime);
+    if (arriveDate !== todayStr) return; // 只提醒今天到店的
+    const ok = await pushWecom(inv, 'remind');
+    if (ok) {
+      inv.remindedAt = Date.now();
+      DB.reminderLog.push({ inviteId: inv.id, at: Date.now() });
+      saveDB();
+      await updateCloudRecord('invite', inv.id, { remindedAt: inv.remindedAt });
+    }
+  });
+}
+
+/* ============================================================
+ * 启动
+ * ============================================================ */
+(async function bootstrap() {
+  await initCloudBase();
+  // v6: token 恢复用户态
+  if (CLOUD_READY && getToken()) {
+    const meRes = await api('me');
+    if (meRes.ok) {
+      window.__USER__ = meRes.user;
+    } else {
+      clearToken();
+    }
+  }
+  if (CLOUD_READY && window.__USER__) {
+    await pullCloudData();
+    saveDB();
+  }
+  if (window.__USER__) enterApp();
+  // 每 30 秒后台同步一次（已登录才同步）
+  setInterval(async () => {
+    if (CLOUD_READY && window.__USER__) {
+      await pullCloudData();
+      const cur = document.querySelector('.menu-item.active');
+      if (cur) renderPage(cur.dataset.key);
+    }
+  }, 30000);
+})();
+</script>
+</body>
+</html>

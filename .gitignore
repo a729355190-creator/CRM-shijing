@@ -1,0 +1,39 @@
+# ===== 依赖 =====
+node_modules/
+
+# ===== 数据库（绝不进 git，由备份脚本单独管理）=====
+db/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# ===== 上传文件（体积大，单独备份）=====
+uploads/
+
+# ===== 备份文件 =====
+backups/
+*.bak
+*.bak_*
+*.bak.*
+
+# ===== 环境变量与密钥（敏感，绝不进 git）=====
+.env
+.env.*
+*.pem
+*.key
+
+# ===== 日志 =====
+*.log
+logs/
+npm-debug.log*
+
+# ===== 临时/补丁脚本（一次性，不纳入版本）=====
+_patch*.js
+_merge.js
+_ocretry.js
+_import_old*.js
+
+# ===== 系统文件 =====
+.DS_Store
+Thumbs.db
