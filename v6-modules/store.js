@@ -687,10 +687,25 @@ window.render_store_team = async function (page) {
       <p class="muted">${subtitle}</p>
     </div>
 
+    <div class="card" style="padding:14px 16px">
+      <div style="font-size:13px;color:var(--ink-soft);margin-bottom:8px;">🔎 自定义查询</div>
+      <div id="stTeamRange"></div>
+      <div id="stTeamCustom" style="margin-top:12px;"></div>
+    </div>
+
     ${rangeBlock('📅 今日（' + today + '）', teamMembers, name => performerStat(name, today, today), storeTotalStat(today, today))}
     ${rangeBlock('📊 本周（' + weekStart + ' ~ ' + today + '）', teamMembers, name => performerStat(name, weekStart, today), storeTotalStat(weekStart, today))}
     ${rangeBlock('📈 本月（' + monthStart + ' ~ ' + today + '）', teamMembers, name => performerStat(name, monthStart, today), storeTotalStat(monthStart, today))}
   `;
+
+  // 自定义时间查询块
+  function renderCustom(r) {
+    document.getElementById('stTeamCustom').innerHTML =
+      rangeBlock(`📋 ${r.label}（${r.start} ~ ${r.end}）`, teamMembers,
+        name => performerStat(name, r.start, r.end), storeTotalStat(r.start, r.end));
+  }
+  window.v6DateRange.mount('stTeamRange', { preset: 'month', onChange: renderCustom });
+  renderCustom(window.v6DateRange.compute('month'));
 
   function rangeBlock(title, members, fn, total) {
     return `
