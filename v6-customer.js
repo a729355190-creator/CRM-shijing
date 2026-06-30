@@ -35,6 +35,72 @@ module.exports = function (app, db, deps) {
   const getConfig = deps.getConfig;
   const v6Required = deps.v6Required || ((req, res, next) => next());
   const v6HQRequired = deps.v6HQRequired || ((req, res, next) => next());
+
+  // ===== 客户中心同步：门店操作 → customer_events / deals =====
+  // 通过 phone → customer_bind → external_userid 关联到客户主档
+  function syncToHub(rec, kind) {
+    try {
+      const ph = (rec.phone || '').replace(/\s|-/g, '');
+      if (!ph) return;
+      const bind = db.prepare('SELECT external_userid FROM shijing_customer_bind WHERE phone=? AND external_userid IS NOT NULL AND external_userid<>\'\'').get(ph);
+      if (!bind) return; // 未绑定企微，无法挂到客户中心(等绑定后可补)
+      const ext = bind.external_userid;
+      const at = rec.arriveTime ? (Date.parse(rec.arriveTime.length <= 16 ? rec.arriveTime + ':00' : rec.arriveTime) || Date.now()) : Date.now();
+      const now = Date.now();
+
+      if (kind === 'reinvite') {
+        // 再次邀约 → 排期事件
+        db.prepare(`INSERT OR REPLACE INTO shijing_customer_events
+          (id, external_userid, type, actor, source_table, source_id, payload, occurred_at, created_at)
+          VALUES (?,?,?,?,?,?,?,?,?)`).run(
+          'ev_reinv_' + rec.id, ext, 'scheduled', rec.csTeamName || '门店复购邀约',
+          'shijing_invite', rec.id, JSON.stringify({ remark: rec.remark }), at, now);
+        return;
+      }
+
+      // visit：到店事件
+      db.prepare(`INSERT OR REPLACE INTO shijing_customer_events
+        (id, external_userid, type, actor, source_table, source_id, payload, occurred_at, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?)`).run(
+        'ev_visit_' + rec.id, ext, 'arrived', rec.performer || rec.teamId || '',
+        'shijing_store', rec.id, JSON.stringify({ performer: rec.performer, customerType: rec.customerType }), at, now);
+
+      // 成交 → deals + dealt 事件 + 贡献者
+      const amount = Number(rec.closedAmount || 0) || 0;
+      if (rec.isClosed === '是' && amount > 0) {
+        const dealId = 'deal_visit_' + rec.id;
+        const project = rec.remark ? String(rec.remark).split('\n')[0].slice(0, 40) : '复购/操作';
+        // 判断是否复购：该客户已有成单则记 repurchase
+        const hasDeal = db.prepare("SELECT COUNT(*) c FROM shijing_deals WHERE external_userid=? AND kind IN ('first_deal','repurchase')").get(ext).c;
+        const dealKind = hasDeal > 0 ? 'repurchase' : 'first_deal';
+        db.prepare(`INSERT OR REPLACE INTO shijing_deals
+          (id, external_userid, kind, project, amount, performer, store_id, dealt_at, source_table, source_id, created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+          dealId, ext, dealKind, project, amount, rec.performer || '', rec.teamId || '', at, 'shijing_store', rec.id, now);
+        db.prepare(`INSERT OR REPLACE INTO shijing_customer_events
+          (id, external_userid, type, actor, source_table, source_id, payload, occurred_at, created_at)
+          VALUES (?,?,?,?,?,?,?,?,?)`).run(
+          'ev_deal_' + rec.id, ext, dealKind === 'repurchase' ? 'repurchase' : 'dealt', rec.performer || rec.teamId || '',
+          'shijing_store', rec.id, JSON.stringify({ amount, performer: rec.performer, project }), at, now);
+        // 贡献者：门店服务人 + 归属客服
+        if (rec.performer) {
+          db.prepare('INSERT OR REPLACE INTO shijing_deal_contributors (id, deal_id, contributor, role, created_at) VALUES (?,?,?,?,?)')
+            .run('dc_' + dealId + '_store', dealId, rec.performer, dealKind === 'repurchase' ? 'repurchase' : 'store_deal', now);
+        }
+        const cust = db.prepare('SELECT follow_userid FROM shijing_wecom_customers WHERE external_userid=?').get(ext);
+        if (cust && cust.follow_userid) {
+          const s = db.prepare('SELECT name FROM shijing_staff WHERE wecomUserid=?').get(cust.follow_userid);
+          db.prepare('INSERT OR REPLACE INTO shijing_deal_contributors (id, deal_id, contributor, role, created_at) VALUES (?,?,?,?,?)')
+            .run('dc_' + dealId + '_cs', dealId, (s && s.name) || cust.follow_userid, 'cs_lead', now);
+        }
+        // 升级客户阶段
+        db.prepare("UPDATE shijing_wecom_customers SET stage=? WHERE external_userid=?").run(dealKind === 'repurchase' ? 'repurchase' : 'dealt', ext);
+      } else {
+        // 仅到店未成交：阶段至少 arrived
+        db.prepare("UPDATE shijing_wecom_customers SET stage='arrived' WHERE external_userid=? AND stage IN ('lead','deposit','scheduled')").run(ext);
+      }
+    } catch (e) { /* 同步失败不影响主流程 */ console.error('[syncToHub]', e && e.message); }
+  }
   const fmtLocalDate = deps.fmtLocalDate || (d => { d = d || new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); });
 
   // 照片存储目录（复用 uploads 下的子目录）
@@ -491,6 +557,7 @@ module.exports = function (app, db, deps) {
       };
       db.prepare(`INSERT INTO shijing_store(id, data) VALUES(?, ?)`).run(rec.id, JSON.stringify(rec));
       _cache.at = 0;
+      syncToHub(rec, 'visit'); // ★ 同步到客户中心(事件流/成交/贡献者/复购)
       res.json({ ok: true, id: rec.id });
     } catch (e) { res.json({ ok: false, error: e.message || String(e) }); }
   });
@@ -602,6 +669,7 @@ module.exports = function (app, db, deps) {
 
       db.prepare(`INSERT INTO shijing_invite(id, data) VALUES(?, ?)`).run(rec.id, JSON.stringify(rec));
       _cache.at = 0;
+      syncToHub(rec, 'reinvite'); // ★ 同步到客户中心(复购排期事件)
       res.json({ ok: true, id: rec.id });
     } catch (e) { res.json({ ok: false, error: e.message || String(e) }); }
   });

@@ -129,7 +129,7 @@
           <div class="hub-tlt">${EVENT_LABEL[e.type] || esc(e.type)}${extra}</div>
           <div class="hub-tlm">${fmtTs(e.occurred_at)}${e.actor ? ' · ' + esc(e.actor) : ''}</div>
         </div>`;
-      }).join('') : `<div class="muted" style="color:#8a9099;font-size:13px;">暂无事件记录（历史事件回填将在后续阶段补充）</div>`;
+      }).join('') : `<div class="muted" style="color:#8a9099;font-size:13px;">暂无事件记录</div>`;
 
       const dealsHtml = (d.deals && d.deals.length) ? d.deals.map(dl =>
         `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f1f3;">
@@ -153,6 +153,10 @@
             <div style="font-size:20px;font-weight:600;color:#2ba471;">¥${d.totalDealAmount || 0}</div>
           </div>
         </div>
+        ${c.phone ? `<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+          <span class="hub-pgbtn hub-add-deal" style="background:#2ba471;color:#fff;border-color:#2ba471;padding:7px 16px;">+ 新增到店/复购</span>
+        </div>` : `<div style="margin-top:12px;font-size:12px;color:#e23b3b;">该客户暂无手机号，无法记录到店/复购（需先在排客时绑定手机号）</div>`}
+        <div id="hubAddForm" style="display:none;margin-top:12px;padding:14px;background:#f7f8fa;border-radius:10px;"></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:18px;">
           <div>
             <div style="font-size:14px;font-weight:500;margin-bottom:6px;">生命周期轨迹</div>
@@ -164,6 +168,53 @@
           </div>
         </div>
       </div>`;
+
+      // 新增到店/复购 表单
+      const addBtn = box.querySelector('.hub-add-deal');
+      if (addBtn) {
+        const formBox = document.getElementById('hubAddForm');
+        addBtn.onclick = () => {
+          if (formBox.style.display === 'block') { formBox.style.display = 'none'; return; }
+          formBox.style.display = 'block';
+          formBox.innerHTML = `
+            <div style="font-size:13px;font-weight:500;margin-bottom:10px;">记录本次到店 / 复购（客户：${esc(c.real_name || c.name || '')}）</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+              <div><label style="font-size:12px;color:#646a73;">项目/卡项</label>
+                <input id="ad_project" class="hub-input" style="width:100%;font-size:14px;padding:8px 10px;" placeholder="如：面部护理 5次卡"/></div>
+              <div><label style="font-size:12px;color:#646a73;">成交金额</label>
+                <input id="ad_amount" class="hub-input" type="number" style="width:100%;font-size:14px;padding:8px 10px;" placeholder="0=仅到店未成交"/></div>
+              <div><label style="font-size:12px;color:#646a73;">服务人</label>
+                <input id="ad_perf" class="hub-input" style="width:100%;font-size:14px;padding:8px 10px;" placeholder="服务人姓名"/></div>
+              <div><label style="font-size:12px;color:#646a73;">备注</label>
+                <input id="ad_remark" class="hub-input" style="width:100%;font-size:14px;padding:8px 10px;" placeholder="选填"/></div>
+            </div>
+            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+              <span class="hub-pgbtn hub-do-save" style="background:#2ba471;color:#fff;border-color:#2ba471;padding:7px 16px;">保存</span>
+              <span class="hub-pgbtn hub-do-cancel" style="padding:7px 16px;">取消</span>
+              <span id="ad_msg" style="font-size:13px;"></span>
+            </div>`;
+          formBox.querySelector('.hub-do-cancel').onclick = () => { formBox.style.display = 'none'; };
+          formBox.querySelector('.hub-do-save').onclick = async () => {
+            const amount = +document.getElementById('ad_amount').value || 0;
+            const body = {
+              name: c.real_name || c.name, phone: c.phone,
+              isOperated: '是', opAmount: 0,
+              isClosed: amount > 0 ? '是' : '否', closedAmount: amount,
+              performer: document.getElementById('ad_perf').value.trim(),
+              remark: (document.getElementById('ad_project').value.trim() + ' ' + document.getElementById('ad_remark').value.trim()).trim(),
+              customerType: '老客',
+            };
+            const msg = document.getElementById('ad_msg');
+            msg.textContent = '保存中…'; msg.style.color = '#8a9099';
+            try {
+              const r = await fetch('/api/customer/store-visit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) });
+              const j = await r.json();
+              if (j.ok) { msg.textContent = '✅ 已记录'; msg.style.color = '#2ba471'; setTimeout(() => showDetail(ext), 700); }
+              else { msg.textContent = '❌ ' + j.error; msg.style.color = '#e23b3b'; }
+            } catch (e) { msg.textContent = '❌ ' + e.message; msg.style.color = '#e23b3b'; }
+          };
+        };
+      }
     }
 
     document.getElementById('hubSearch').oninput = () => { page_ = 1; loadList(); };
