@@ -90,8 +90,8 @@ window.render_hq_overview = async function (page) {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <a class="btn btn-primary" href="#data">📊 数据看板</a>
         <a class="btn" href="#report">⊞ 数据报表</a>
-        <a class="btn" href="#cs_perf">☎ 客服部数据情况</a>
-        <a class="btn" href="#staff">◇ 市场部业绩查询</a>
+        <a class="btn" href="#cs_perf">☎ 客服明细</a>
+        <a class="btn" href="#staff">◇ 市场部明细</a>
         <a class="btn" href="#invite">📞 全部排客</a>
         <a class="btn" href="#users">◈ 用户管理</a>
         <a class="btn" href="#settings">⚙️ 系统设置</a>
@@ -591,11 +591,9 @@ window.render_hq_cs_perf = async function (page) {
     return d >= start && d <= end;
   });
 
-  const tabBtn = (k, t) => `<button class="btn ${F.tab === k ? 'btn-primary' : ''}" style="height:32px;padding:0 14px;font-size:12px" onclick="setHQCsTab('${k}')">${t}</button>`;
-
   page.innerHTML = `
     <div class="card">
-      <h2>☎ 客服部数据情况 <span style="font-size:13px;color:var(--ink-mute);font-weight:400">（${label}：${start} ~ ${end}）</span></h2>
+      <h2>☎ 客服明细 <span style="font-size:13px;color:var(--ink-mute);font-weight:400">（${label}：${start} ~ ${end}）</span></h2>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
         ${presetButtons(F.preset, 'setHQCsPreset')}
         <input type="date" class="input" id="cp_start" value="${start}" style="width:auto;height:32px;font-size:12px"/>
@@ -603,25 +601,27 @@ window.render_hq_cs_perf = async function (page) {
         <input type="date" class="input" id="cp_end" value="${end}" style="width:auto;height:32px;font-size:12px"/>
         <button class="btn btn-primary" style="height:32px;padding:0 12px;font-size:12px" onclick="applyHQCsCustom()">应用</button>
       </div>
-      <div style="display:flex;gap:6px;margin-top:12px">
-        ${tabBtn('team', '按团队')}
-        ${tabBtn('person', '按个人')}
-      </div>
+      <p class="muted" style="margin-top:8px;font-size:12px">先看团队总数，点击团队行可展开/收起该团队下的客服个人明细。</p>
     </div>
   `;
 
-  if (F.tab === 'team') {
-    const csTeams = teamsByRoleAll('cs');
-    const rows = csTeams.map(t => csStat(t.name + (t.deleted ? ' (停用)' : ''), cs.filter(x => x.teamId === t.id), inv.filter(x => x.csTeamId === t.id)));
-    page.appendChild(buildCsTable('按团队', rows));
-  } else {
-    const rows = users.map(u => {
-      const myCs = cs.filter(x => x.lastEditByUserId === u.id || x.lastEditBy === u.realName + '(' + u.username + ')');
-      const myInv = inv.filter(x => x.csUserId === u.id || x.csUserName === u.realName);
-      return csStat(u.realName + ' (' + u.username + ')', myCs, myInv);
-    });
-    page.appendChild(buildCsTable('按个人', rows));
-  }
+  // 按团队聚合，团队下挂个人；点团队行展开个人
+  const csTeams = teamsByRoleAll('cs');
+  const teamBlocks = csTeams.map(t => {
+    const teamCs = cs.filter(x => x.teamId === t.id);
+    const teamInv = inv.filter(x => x.csTeamId === t.id);
+    const teamRow = csStat(t.name + (t.deleted ? ' (停用)' : ''), teamCs, teamInv);
+    // 团队下的客服个人
+    const teamUsers = users.filter(u => (u.csTeamId || u.teamId) === t.id);
+    const memberRows = teamUsers.map(u => {
+      const myCs = teamCs.filter(x => x.lastEditByUserId === u.id || x.lastEditBy === u.realName + '(' + u.username + ')');
+      const myInv = teamInv.filter(x => x.csUserId === u.id || x.csUserName === u.realName);
+      return csStat(u.realName + '（' + u.username + '）', myCs, myInv);
+    }).sort((a, b) => b.dep - a.dep);
+    return { team: t, teamRow, memberRows };
+  }).sort((a, b) => b.teamRow.dep - a.teamRow.dep);
+
+  page.appendChild(buildTeamTable(teamBlocks));
 
   function csStat(name, csList, invList) {
     const fans = csList.reduce((s, x) => s + (+x.addFans || 0), 0);
@@ -631,35 +631,66 @@ window.render_hq_cs_perf = async function (page) {
     const arrived = invList.filter(x => x.status === 'arrived').length;
     return {
       name, fans, dep, amount, invited, arrived,
-      // 不做 100% 上限（业务允许跨日补到店超过排客数）
       depRate: fans > 0 ? (dep / fans * 100).toFixed(1) : null,
       arriveRate: invited > 0 ? (arrived / invited * 100).toFixed(1) : null,
       depArrRate: dep > 0 ? (arrived / dep * 100).toFixed(1) : null,
     };
   }
 
-  function buildCsTable(title, rows) {
+  function statCells(r) {
+    return `
+      <td style="text-align:right">${r.fans}</td>
+      <td style="text-align:right;color:var(--klein);font-weight:500">${r.dep}</td>
+      <td style="text-align:right">${r.invited}</td>
+      <td style="text-align:right;color:var(--success)">${r.arrived}</td>
+      <td style="text-align:right">${r.depRate ? r.depRate + '%' : '-'}</td>
+      <td style="text-align:right">${r.arriveRate ? r.arriveRate + '%' : '-'}</td>
+      <td style="text-align:right">${r.depArrRate ? r.depArrRate + '%' : '-'}</td>
+      <td style="text-align:right;color:var(--danger)">${fmtMoney(r.amount)}</td>`;
+  }
+
+  function buildTeamTable(blocks) {
     const div = document.createElement('div');
     div.className = 'card';
+    let bodyHtml = '';
+    blocks.forEach((b, i) => {
+      const tid = 'csgrp_' + b.team.id;
+      const hasMembers = b.memberRows.length > 0;
+      bodyHtml += `<tr class="cs-team-row" data-grp="${tid}" style="cursor:${hasMembers ? 'pointer' : 'default'};background:var(--klein-soft)">
+        <td>${i + 1}</td>
+        <td><b>${hasMembers ? `<span class="cs-arw" style="display:inline-block;width:14px;transition:transform .15s">▸</span> ` : ''}${b.teamRow.name}</b>${hasMembers ? `<span class="muted" style="font-size:11px;margin-left:6px">${b.memberRows.length}人</span>` : ''}</td>
+        ${statCells(b.teamRow)}
+      </tr>`;
+      b.memberRows.forEach(m => {
+        bodyHtml += `<tr class="cs-mem-row ${tid}" style="display:none;background:#fff">
+          <td></td>
+          <td style="padding-left:28px;color:var(--ink-soft)">${m.name}</td>
+          ${statCells(m)}
+        </tr>`;
+      });
+      if (!hasMembers) {
+        bodyHtml += `<tr class="cs-mem-row ${tid}" style="display:none"><td></td><td colspan="9" class="muted" style="padding-left:28px">该团队暂无已注册客服账号</td></tr>`;
+      }
+    });
     div.innerHTML = `
-      <h3>${title}</h3>
+      <h3>客服团队明细</h3>
       <div class="table-wrap"><table>
-        <thead><tr><th>排名</th><th>${F.tab === 'team' ? '团队' : '客服'}</th><th style="text-align:right">加粉数</th><th style="text-align:right">定金数</th><th style="text-align:right">排客数</th><th style="text-align:right">已到店</th><th style="text-align:right">定金率</th><th style="text-align:right">到店率</th><th style="text-align:right">定金到店率</th><th style="text-align:right">定金金额</th></tr></thead>
-        <tbody>${rows.sort((a, b) => b.dep - a.dep).map((r, i) => `<tr>
-          <td>${i + 1}</td>
-          <td><b>${r.name}</b></td>
-          <td style="text-align:right">${r.fans}</td>
-          <td style="text-align:right;color:var(--klein);font-weight:500">${r.dep}</td>
-          <td style="text-align:right">${r.invited}</td>
-          <td style="text-align:right;color:var(--success)">${r.arrived}</td>
-          <td style="text-align:right">${r.depRate ? r.depRate + '%' : '-'}</td>
-          <td style="text-align:right">${r.arriveRate ? r.arriveRate + '%' : '-'}</td>
-          <td style="text-align:right">${r.depArrRate ? r.depArrRate + '%' : '-'}</td>
-          <td style="text-align:right;color:var(--danger)">${fmtMoney(r.amount)}</td>
-        </tr>`).join('')}</tbody>
+        <thead><tr><th>排名</th><th>团队 / 客服</th><th style="text-align:right">加粉数</th><th style="text-align:right">定金数</th><th style="text-align:right">排客数</th><th style="text-align:right">已到店</th><th style="text-align:right">定金率</th><th style="text-align:right">到店率</th><th style="text-align:right">定金到店率</th><th style="text-align:right">定金金额</th></tr></thead>
+        <tbody>${bodyHtml || '<tr><td colspan="10" class="muted" style="text-align:center;padding:24px">暂无数据</td></tr>'}</tbody>
       </table></div>
-      <p class="muted" style="margin-top:8px;font-size:11px">说明：到店率 = 已到店 / 排客数；定金到店率 = 已到店 / 定金数。允许超过 100%（跨日补到店、临场到店等场景）。</p>
+      <p class="muted" style="margin-top:8px;font-size:11px">点击蓝色团队行可展开该团队下的客服个人明细。到店率 = 已到店 / 排客数；定金到店率 = 已到店 / 定金数（允许 >100%）。</p>
     `;
+    // 展开/收起
+    div.querySelectorAll('.cs-team-row').forEach(tr => {
+      tr.onclick = () => {
+        const grp = tr.dataset.grp;
+        const arw = tr.querySelector('.cs-arw');
+        const mems = div.querySelectorAll('.' + grp);
+        const open = mems.length && mems[0].style.display !== 'none';
+        mems.forEach(m => m.style.display = open ? 'none' : '');
+        if (arw) arw.style.transform = open ? '' : 'rotate(90deg)';
+      };
+    });
     return div;
   }
 };
@@ -687,7 +718,7 @@ window.render_hq_staff = async function (page) {
 
   page.innerHTML = `
     <div class="card">
-      <h2>◇ 市场部业绩查询 <span style="font-size:13px;color:var(--ink-mute);font-weight:400">（${label}：${start} ~ ${end}）</span></h2>
+      <h2>◇ 市场部明细 <span style="font-size:13px;color:var(--ink-mute);font-weight:400">（${label}：${start} ~ ${end}）</span></h2>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
         ${presetButtons(F.preset, 'setHQStaffPreset')}
         <input type="date" class="input" id="st_start" value="${start}" style="width:auto;height:32px;font-size:12px"/>
@@ -912,7 +943,14 @@ window.render_hq_users = async function (page) {
         <td>${u.position === 'manager' ? '店长' : u.position === 'staff' ? '店员' : '-'}</td>
         <td><span class="tag ${statusTag}">${statusText}</span></td>
         <td class="muted">${last}</td>
-        <td><button class="btn" style="height:28px;padding:0 10px;font-size:12px" onclick="resetUserPwd('${u.id}','${u.username}')">改密</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn" style="height:28px;padding:0 10px;font-size:12px" onclick="resetUserPwd('${u.id}','${u.username}')">改密</button>
+          ${u.role === 'hq' ? '' : (u.status === 'active'
+            ? `<button class="btn" style="height:28px;padding:0 10px;font-size:12px;color:var(--danger);border-color:rgba(192,57,43,.3)" onclick="hqToggleUserStatus('${u.id}','${esc(u.realName || u.username)}','disable')">停用</button>`
+            : u.status === 'disabled'
+              ? `<button class="btn btn-primary" style="height:28px;padding:0 10px;font-size:12px" onclick="hqToggleUserStatus('${u.id}','${esc(u.realName || u.username)}','enable')">启用</button>`
+              : '')}
+        </td>
       </tr>
     `;
   }
@@ -946,6 +984,22 @@ window.resetUserPwd = async function (id, username) {
   });
   const j = await r.json();
   alert(j.ok ? '已重置 ✓' : '失败：' + (j.error || ''));
+};
+// 一键停用/启用账号（离职人员管理）
+window.hqToggleUserStatus = async function (id, name, action) {
+  const disable = action === 'disable';
+  const tip = disable
+    ? `确认停用「${name}」的账号？\n\n停用后该账号将无法登录系统（适用于离职/调岗）。其历史数据和业绩归属保留不变，需要时可随时「启用」恢复。`
+    : `确认重新启用「${name}」的账号？\n\n启用后该账号可正常登录。`;
+  if (!confirm(tip)) return;
+  const r = await fetch(`/api/v6/users/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: disable ? 'disabled' : 'active' }),
+  });
+  const j = await r.json();
+  if (j.ok) { showToast(disable ? '已停用' : '已启用', 'success'); render_hq_users(document.getElementById('page')); }
+  else showToast('失败：' + (j.error || ''), 'error');
 };
 window.openCreateUserDialog = function () {
   const username = prompt('用户名（英文，如 zhangsan）：');
