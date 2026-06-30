@@ -10,7 +10,7 @@ window.render_store_overview = async function (page) {
   const inv = (DB.invite || []).filter(x => x.storeTeamId === teamId);
 
   // 店员只看自己业绩；店长看全店
-  const isStaff = u.position === 'staff';
+  const isStaff = false; // 门店全员看全店数据（按业务理念，不再按个人过滤）
   let stores = (DB.store || []).filter(x => x.teamId === teamId);
   if (isStaff) stores = stores.filter(x => (x.performer || '').trim() === u.realName);
 
@@ -423,7 +423,7 @@ window.render_store_records = async function (page) {
   page.innerHTML = '<div class="loading">加载中，请稍后…</div>';
   await loadAllData();
   const u = V6.user;
-  const isStaff = u.position === 'staff';
+  const isStaff = false; // 门店全员看全店数据（按业务理念，不再按个人过滤）
   let stores = (DB.store || []).filter(x => x.teamId === u.teamId);
   if (isStaff) stores = stores.filter(x => (x.performer || '').trim() === u.realName);
   stores = stores.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -623,7 +623,7 @@ window.render_store_team = async function (page) {
   page.innerHTML = '<div class="loading">加载中，请稍后…</div>';
   const u = V6.user;
   await loadAllData();
-  const isStaff = u.position === 'staff';
+  const isStaff = false; // 门店全员看全店数据（按业务理念，不再按个人过滤）
   // 成员名单：不再调 HQ 专属的 /api/v6/users（店长无权限会 401 导致整页空白）。
   // 改为直接从本店服务记录的"业绩贡献人(performer)"字段提取，覆盖所有实际有业绩的老师（含未注册账号的）。
   const storeRows0 = (DB.store || []).filter(x => x.teamId === u.teamId);
