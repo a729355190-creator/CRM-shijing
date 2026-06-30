@@ -2398,6 +2398,7 @@ app.get('/api/marketing/deposit-arrive-stats', (req, res) => {
 try {
   require('./v6-detail-followup')(app, db, { getConfig, pushWecom, fmtLocalDate, v6Required, v6HQRequired, cron });
   require('./v6-customer')(app, db, { getConfig, fmtLocalDate, v6Required, v6HQRequired });
+  require('./v6-customer-hub')(app, db, { getConfig, fmtLocalDate, v6Required, v6HQRequired });
 } catch (e) {
   console.error('[v6-customer] mount failed:', e && e.message);
 }
