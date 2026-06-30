@@ -3,22 +3,24 @@
 // 4) 客服业绩→客服部数据情况(团队/个人 tab)；5) 员工查询→市场部业绩查询；
 // 6) 邀约加预设；7) 设置加新部门管理
 
-// 时间预设辅助
+// 时间预设辅助（统一口径：昨日 / 近3天 / 近7天 / 本月 / 自定义）
 window.computePreset = function (preset, customFrom, customTo) {
   const today = todayStr();
-  const yest = fmtDate(new Date(Date.now() - 86400000));
-  const weekStart = (() => { const d = new Date(); const w = (d.getDay() + 6) % 7; d.setDate(d.getDate() - w); return fmtDate(d); })();
+  const dayAgo = (n) => fmtDate(new Date(Date.now() - n * 86400000));
   const monthStart = today.slice(0, 8) + '01';
-  if (preset === 'today') return { start: today, end: today, label: '今日' };
-  if (preset === 'yesterday') return { start: yest, end: yest, label: '昨日' };
-  if (preset === 'week') return { start: weekStart, end: today, label: '本周' };
+  if (preset === 'yesterday') { const y = dayAgo(1); return { start: y, end: y, label: '昨日' }; }
+  if (preset === '3d') return { start: dayAgo(2), end: today, label: '近3天' };
+  if (preset === '7d') return { start: dayAgo(6), end: today, label: '近7天' };
   if (preset === 'month') return { start: monthStart, end: today, label: '本月' };
+  // 兼容旧 preset 值，避免历史调用报错
+  if (preset === 'today') return { start: today, end: today, label: '今日' };
+  if (preset === 'week') return { start: dayAgo(6), end: today, label: '近7天' };
   return { start: customFrom, end: customTo, label: '自定义' };
 };
 
 window.presetButtons = function (curPreset, fnName) {
   const btn = (k, t) => `<button class="btn ${curPreset === k ? 'btn-primary' : ''}" style="height:32px;padding:0 12px;font-size:12px" onclick="${fnName}('${k}')">${t}</button>`;
-  return btn('today', '今日') + btn('yesterday', '昨日') + btn('week', '本周') + btn('month', '本月');
+  return btn('yesterday', '昨日') + btn('3d', '近3天') + btn('7d', '近7天') + btn('month', '本月');
 };
 
 // ============== 总览（完整 KPI）==============

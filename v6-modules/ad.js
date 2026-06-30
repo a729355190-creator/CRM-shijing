@@ -542,17 +542,10 @@ window.render_ad_discover = async function(page) {
 window.render_ad_report = async function(page) {
   page.innerHTML = '<div class="loading">加载中，请稍后…</div>';
   await loadAllData();
-  const F = window.__adReportFilter = window.__adReportFilter || { preset: 'month', from: '', to: '' };
-  const todayS = todayStr();
-  const yest = fmtDate(new Date(Date.now() - 86400000));
-  const weekStart = (() => { const d = new Date(); const w = (d.getDay() + 6) % 7; d.setDate(d.getDate() - w); return fmtDate(d); })();
-  const monthStart = (() => { const d = new Date(); d.setDate(1); return fmtDate(d); })();
-  let start, end, label;
-  if (F.preset === 'today') { start = todayS; end = todayS; label = '今日'; }
-  else if (F.preset === 'yesterday') { start = yest; end = yest; label = '昨日'; }
-  else if (F.preset === 'week') { start = weekStart; end = todayS; label = '本周'; }
-  else if (F.preset === 'month') { start = monthStart; end = todayS; label = '本月'; }
-  else { start = F.from; end = F.to; label = '自定义'; }
+  const F = window.__adReportFilter = window.__adReportFilter || { preset: '7d', from: '', to: '' };
+  const _p = window.v6DateRange.compute(F.preset, F.from, F.to);
+  let start = _p.start, end = _p.end, label = _p.label;
+  if (F.preset === 'custom') { start = F.from; end = F.to; label = '自定义'; }
 
   const presetBtn = (k, t) => `<button class="btn ${F.preset === k ? 'btn-primary' : ''}" style="height:32px;padding:0 12px;font-size:12px" onclick="setAdReportPreset('${k}')">${t}</button>`;
 
@@ -560,9 +553,9 @@ window.render_ad_report = async function(page) {
     <div class="card">
       <h2>⊞ 数据报表 <span style="font-size:13px;color:var(--ink-mute);font-weight:400">（${label}：${start} ~ ${end}）</span></h2>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
-        ${presetBtn('today', '今日')}
         ${presetBtn('yesterday', '昨日')}
-        ${presetBtn('week', '本周')}
+        ${presetBtn('3d', '近3天')}
+        ${presetBtn('7d', '近7天')}
         ${presetBtn('month', '本月')}
         <span style="color:var(--ink-mute);margin-left:8px">自定义：</span>
         <input type="date" class="input" id="ar_start" value="${start}" style="width:auto;height:32px;font-size:12px"/>
@@ -665,19 +658,13 @@ window.applyAdReportCustom = () => {
 // === 渠道分析 MVP（巨量 ad / 本地推 / ADQ）===
 window.render_ad_channels = async function(page) {
   page.innerHTML = '<div class="loading">加载中，请稍后…</div>';
-  if (!window.__chState) window.__chState = { tab: 'oc', preset: 'month' };
+  if (!window.__chState) window.__chState = { tab: 'oc', preset: '7d', from: '', to: '' };
   const st = window.__chState;
   await loadAllData();
 
-  const todayS = todayStr();
-  const monthStart = todayS.slice(0, 8) + '01';
-  const yest = fmtDate(new Date(Date.now() - 86400000));
-  const weekStart = (() => { const d = new Date(); const w = (d.getDay() + 6) % 7; d.setDate(d.getDate() - w); return fmtDate(d); })();
-  let start, end, label;
-  if (st.preset === 'today') { start = todayS; end = todayS; label = '今日'; }
-  else if (st.preset === 'yesterday') { start = yest; end = yest; label = '昨日'; }
-  else if (st.preset === 'week') { start = weekStart; end = todayS; label = '本周'; }
-  else { start = monthStart; end = todayS; label = '本月'; }
+  const _p = window.v6DateRange.compute(st.preset, st.from, st.to);
+  let start = _p.start, end = _p.end, label = _p.label;
+  if (st.preset === 'custom') { start = st.from; end = st.to; label = '自定义'; }
 
   const tabBtn = (k, t, sub) => `<button class="btn ${st.tab===k?'btn-primary':''}" style="padding:8px 18px;font-size:13px" onclick="setChTab('${k}')">${t}<br><small style="font-size:10px;opacity:.7">${sub}</small></button>`;
   const presetBtn = (k, t) => `<button class="btn ${st.preset===k?'btn-primary':''}" style="height:30px;padding:0 12px;font-size:12px" onclick="setChPreset('${k}')">${t}</button>`;
@@ -691,8 +678,13 @@ window.render_ad_channels = async function(page) {
         ${tabBtn('local', '本地推', '巨量本地推/抖音同城')}
         ${tabBtn('adq', '腾讯 ADQ', '微信朋友圈/视频号')}
       </div>
-      <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
-        ${presetBtn('today','今日')}${presetBtn('yesterday','昨日')}${presetBtn('week','本周')}${presetBtn('month','本月')}
+      <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;align-items:center">
+        ${presetBtn('yesterday','昨日')}${presetBtn('3d','近3天')}${presetBtn('7d','近7天')}${presetBtn('month','本月')}
+        <span style="color:var(--ink-mute);margin-left:8px">自定义：</span>
+        <input type="date" class="input" id="ch_start" value="${start}" style="width:auto;height:30px;font-size:12px"/>
+        <span style="color:var(--ink-mute)">至</span>
+        <input type="date" class="input" id="ch_end" value="${end}" style="width:auto;height:30px;font-size:12px"/>
+        <button class="btn btn-primary" style="height:30px;padding:0 12px;font-size:12px" onclick="applyChCustom()">应用</button>
       </div>
     </div>
     <div id="ch_body"></div>
@@ -769,7 +761,14 @@ window.render_ad_channels = async function(page) {
   }
 };
 window.setChTab = (k) => { window.__chState.tab = k; render_ad_channels(document.getElementById('page')); };
-window.setChPreset = (k) => { window.__chState.preset = k; render_ad_channels(document.getElementById('page')); };
+window.setChPreset = (k) => { window.__chState.preset = k; window.__chState.from = ''; window.__chState.to = ''; render_ad_channels(document.getElementById('page')); };
+window.applyChCustom = () => {
+  const from = document.getElementById('ch_start').value;
+  const to = document.getElementById('ch_end').value;
+  if (!from || !to) return alert('请选起止日期');
+  window.__chState = { ...window.__chState, preset: 'custom', from, to };
+  render_ad_channels(document.getElementById('page'));
+};
 
 // === 素材上传（仅客服客服 + HQ）===
 window.render_cs_upload = window.render_hq_upload = async function (page) {

@@ -466,3 +466,61 @@ table tbody tr:last-child td { border-bottom: none; }
 }
 
 .sb-mark img{width:100%;height:100%;object-fit:contain;display:block;}
+
+/* === 统一时间范围选择器 v6DateRange === */
+.v6dr {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: var(--silver-bg);
+  border: 1px solid var(--silver-soft);
+  border-radius: var(--radius-pill);
+  padding: 4px;
+}
+.v6dr-btn {
+  height: 28px;
+  padding: 0 14px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 500;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background .15s var(--ease), color .15s var(--ease);
+  font-family: inherit;
+  white-space: nowrap;
+}
+.v6dr-btn:hover { color: var(--klein); }
+.v6dr-btn.active {
+  background: var(--klein);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0,47,167,.22);
+}
+.v6dr-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 8px;
+  margin-left: 2px;
+  border-left: 1px solid var(--silver-soft);
+}
+.v6dr-date {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--silver);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  outline: none;
+}
+.v6dr-date:focus { border-color: var(--klein); box-shadow: 0 0 0 2px rgba(0,47,167,.12); }
+.v6dr-sep { color: var(--ink-mute); font-size: 12px; }
+@media (max-width: 768px) {
+  .v6dr { width: 100%; justify-content: flex-start; }
+  .v6dr-custom { width: 100%; border-left: 0; margin-left: 0; padding: 6px 0 2px; }
+  .v6dr-date { flex: 1; font-size: 16px; height: 34px; }
+}

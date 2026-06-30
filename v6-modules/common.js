@@ -184,3 +184,85 @@ window.h = function (tag, attrs, ...kids) {
   return el;
 };
 window.html = (s) => s;
+
+// ============================================================
+// 统一时间范围选择器 v6DateRange
+// 预设：昨日 / 近3天 / 近7天 / 本月 / 自定义(任意起止)
+// 用法：
+//   容器: <div id="myDR"></div>
+//   初始化: window.v6DateRange.mount('myDR', { preset:'7d', onChange:(range)=>{...} })
+//   range = { start:'YYYY-MM-DD', end:'YYYY-MM-DD', preset:'7d', label:'近7天' }
+// ============================================================
+window.v6DateRange = (function () {
+  function compute(preset, cf, ct) {
+    const today = todayStr();
+    const dayAgo = (n) => fmtDate(new Date(Date.now() - n * 86400000));
+    const monthStart = today.slice(0, 8) + '01';
+    switch (preset) {
+      case 'yesterday': { const y = dayAgo(1); return { start: y, end: y, preset, label: '昨日' }; }
+      case '3d': return { start: dayAgo(2), end: today, preset, label: '近3天' };
+      case '7d': return { start: dayAgo(6), end: today, preset, label: '近7天' };
+      case 'month': return { start: monthStart, end: today, preset, label: '本月' };
+      case 'custom': return { start: cf || today, end: ct || today, preset: 'custom', label: '自定义' };
+      default: return { start: dayAgo(6), end: today, preset: '7d', label: '近7天' };
+    }
+  }
+
+  const PRESETS = [
+    { k: 'yesterday', t: '昨日' },
+    { k: '3d', t: '近3天' },
+    { k: '7d', t: '近7天' },
+    { k: 'month', t: '本月' },
+    { k: 'custom', t: '自定义' },
+  ];
+
+  function mount(elId, opts) {
+    opts = opts || {};
+    const el = (typeof elId === 'string') ? document.getElementById(elId) : elId;
+    if (!el) return null;
+    const state = compute(opts.preset || '7d', opts.start, opts.end);
+    if (opts.start && opts.end && opts.preset === 'custom') { state.start = opts.start; state.end = opts.end; }
+
+    function render() {
+      const btns = PRESETS.map(p =>
+        `<button type="button" class="v6dr-btn${state.preset === p.k ? ' active' : ''}" data-k="${p.k}">${p.t}</button>`
+      ).join('');
+      const custom = state.preset === 'custom'
+        ? `<span class="v6dr-custom">
+             <input type="date" class="v6dr-date" data-r="start" value="${state.start}" max="${todayStr()}">
+             <span class="v6dr-sep">~</span>
+             <input type="date" class="v6dr-date" data-r="end" value="${state.end}" max="${todayStr()}">
+           </span>` : '';
+      el.innerHTML = `<div class="v6dr">${btns}${custom}</div>`;
+      el.querySelectorAll('.v6dr-btn').forEach(b => {
+        b.onclick = () => {
+          const k = b.dataset.k;
+          const next = compute(k, state.start, state.end);
+          state.preset = next.preset; state.label = next.label;
+          if (k !== 'custom') { state.start = next.start; state.end = next.end; }
+          render();
+          fire();
+        };
+      });
+      el.querySelectorAll('.v6dr-date').forEach(inp => {
+        inp.onchange = () => {
+          if (inp.dataset.r === 'start') state.start = inp.value;
+          else state.end = inp.value;
+          if (state.start && state.end && state.start > state.end) {
+            // 自动纠正：起止颠倒则对调
+            const t = state.start; state.start = state.end; state.end = t;
+            render();
+          }
+          state.label = '自定义';
+          fire();
+        };
+      });
+    }
+    function fire() { if (typeof opts.onChange === 'function') opts.onChange({ start: state.start, end: state.end, preset: state.preset, label: state.label }); }
+
+    render();
+    return { get: () => ({ start: state.start, end: state.end, preset: state.preset, label: state.label }) };
+  }
+
+  return { mount, compute };
+})();

@@ -12,11 +12,7 @@ window._renderFunnel = async function (page) {
           <h3 style="margin:0;">📈 客服全链路看板</h3>
           <div class="muted" style="margin-top:4px;font-size:13px;color:#8a9099;">加粉 → 定金 → 到店 → 删粉，及各环节转化率。数据来自企微客观加粉 + 系统定金/到店。</div>
         </div>
-        <select id="fnDays" class="fn-input">
-          <option value="7">近 7 天</option>
-          <option value="30" selected>近 30 天</option>
-          <option value="90">近 90 天</option>
-        </select>
+        <div id="fnRange"></div>
       </div>
     </div>
     <div id="fnBody" style="margin-top:14px;"><div class="loading">加载中…</div></div>
@@ -39,14 +35,24 @@ window._renderFunnel = async function (page) {
     </style>
   `;
   const $ = id => document.getElementById(id);
-  $('fnDays').onchange = load;
+  let curRange = window.v6DateRange.compute('7d');
+  window.v6DateRange.mount('fnRange', {
+    preset: '7d',
+    onChange: (r) => { curRange = r; load(); },
+  });
   await load();
+
+  // 把起止日期换算成天数(后端 staff-funnel 按 days 取窗口)
+  function rangeDays(r) {
+    const ms = new Date(r.end + 'T00:00:00') - new Date(r.start + 'T00:00:00');
+    return Math.max(1, Math.round(ms / 86400000) + 1);
+  }
 
   async function load() {
     const el = $('fnBody');
     el.innerHTML = '<div class="card"><div class="loading">加载中…</div></div>';
     try {
-      const d = await api.get('/api/customer/staff-funnel?days=' + $('fnDays').value);
+      const d = await api.get('/api/customer/staff-funnel?days=' + rangeDays(curRange));
       if (!d.ok) throw new Error(d.error || '加载失败');
       if (!d.teams.length) { el.innerHTML = '<div class="card"><div style="color:#8a9099;">暂无数据。</div></div>'; return; }
       // 删粉是否已接入企微回调（未接入则不显示假的 0%）
