@@ -65,18 +65,89 @@
         .hub-tld{position:absolute;left:-21px;top:3px;width:11px;height:11px;border-radius:50%;border:2px solid #fff;}
         .hub-tlt{font-size:13px;font-weight:500;color:#1f2329;}
         .hub-tlm{font-size:12px;color:#8a9099;margin-top:1px;}
+        .hub-topkpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;}
+        .hub-panels{display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-top:14px;}
+        @media(max-width:760px){.hub-panels{grid-template-columns:1fr;}}
+        .hub-panel{padding:16px 18px;}
+        .panel-tt{font-size:14px;font-weight:600;color:#1f2329;margin-bottom:14px;}
+        .panel-sub{font-size:12px;font-weight:400;color:#8a9099;}
+        .fn-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+        .fn-lbl{width:52px;font-size:13px;color:#5a6068;flex:none;text-align:right;}
+        .fn-bar-wrap{flex:1;background:#f2f4f7;border-radius:6px;overflow:hidden;height:26px;}
+        .fn-bar{height:26px;border-radius:6px;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;min-width:24px;transition:width .5s ease;}
+        .fn-val{color:#fff;font-size:12px;font-weight:600;}
+        .fn-conv{width:48px;font-size:12px;color:#8a9099;flex:none;text-align:left;}
+        .ct-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;}
+        .ct-lbl{width:42px;font-size:13px;color:#5a6068;flex:none;text-align:right;}
+        .ct-bar-wrap{flex:1;background:#f2f4f7;border-radius:5px;overflow:hidden;height:18px;}
+        .ct-bar{height:18px;border-radius:5px;background:linear-gradient(90deg,#3370ff,#5a8bff);transition:width .5s ease;}
+        .ct-val{width:40px;font-size:12px;color:#5a6068;flex:none;text-align:left;}
       </style>`;
 
-    // 统计
+    // 统计 + 转化漏斗 + 城市分布
     const stats = await hubApi('stats');
     if (stats.ok) {
       const st = stats.byStage || {};
+      const total = stats.total || 0;
+      // 漏斗按"累计到达"口径：到达某阶段=该阶段及更深阶段的人数之和（业务漏斗只往下走）
+      const order = ['lead', 'deposit', 'scheduled', 'arrived', 'dealt', 'repurchase'];
+      const raw = {};
+      order.forEach(k => raw[k] = st[k] || 0);
+      // 累计：每个阶段 = 自身 + 后续所有更深阶段
+      const cum = {};
+      for (let i = 0; i < order.length; i++) {
+        let s = 0;
+        for (let j = i; j < order.length; j++) s += raw[order[j]];
+        cum[order[i]] = s;
+      }
+      const funnelSteps = [
+        { k: 'lead', t: '线索' }, { k: 'deposit', t: '已定金' }, { k: 'scheduled', t: '已排期' },
+        { k: 'arrived', t: '已到店' }, { k: 'dealt', t: '已成单' }, { k: 'repurchase', t: '复购' }
+      ];
+      const maxV = cum['lead'] || total || 1;
+      const funnelHtml = funnelSteps.map((s, i) => {
+        const v = cum[s.k] || 0;
+        const pct = maxV > 0 ? (v / maxV * 100) : 0;
+        // 相对上一阶段的转化率
+        const prevV = i > 0 ? (cum[funnelSteps[i - 1].k] || 0) : 0;
+        const convR = (i > 0 && prevV > 0) ? (v / prevV * 100).toFixed(1) + '%' : (i === 0 ? '—' : '0%');
+        return `<div class="fn-row">
+          <div class="fn-lbl">${s.t}</div>
+          <div class="fn-bar-wrap">
+            <div class="fn-bar" style="width:${Math.max(pct, 2)}%;background:${STAGE_COLOR[s.k]};">
+              <span class="fn-val">${v}</span>
+            </div>
+          </div>
+          <div class="fn-conv">${convR}</div>
+        </div>`;
+      }).join('');
+
+      const cities = Object.entries(stats.byCity || {}).sort((a, b) => b[1] - a[1]);
+      const cityMax = cities.length ? cities[0][1] : 1;
+      const cityHtml = cities.length ? cities.map(([city, n]) => `
+        <div class="ct-row">
+          <div class="ct-lbl">${esc(city)}</div>
+          <div class="ct-bar-wrap"><div class="ct-bar" style="width:${Math.max(n / cityMax * 100, 3)}%;"></div></div>
+          <div class="ct-val">${n}</div>
+        </div>`).join('') : '<div class="muted" style="color:#8a9099;font-size:13px;">暂无城市数据</div>';
+
       document.getElementById('hubStats').innerHTML = `
-        <div class="hub-kpi"><div class="lbl">客户总数</div><div class="val">${stats.total}</div></div>
-        <div class="hub-kpi"><div class="lbl">线索</div><div class="val">${st.lead || 0}</div></div>
-        <div class="hub-kpi"><div class="lbl">已定金</div><div class="val">${st.deposit || 0}</div></div>
-        <div class="hub-kpi"><div class="lbl">已成单</div><div class="val">${st.dealt || 0}</div></div>
-        <div class="hub-kpi"><div class="lbl">复购</div><div class="val">${st.repurchase || 0}</div></div>`;
+        <div class="hub-topkpi">
+          <div class="hub-kpi"><div class="lbl">客户总数</div><div class="val">${total}</div></div>
+          <div class="hub-kpi"><div class="lbl">活跃</div><div class="val" style="color:#2ba471;">${stats.active || 0}</div></div>
+          <div class="hub-kpi"><div class="lbl">流失</div><div class="val" style="color:#b0b4ba;">${stats.lost || 0}</div></div>
+          <div class="hub-kpi"><div class="lbl">成单转化</div><div class="val" style="color:#e23b3b;">${maxV > 0 ? (((cum['dealt'] || 0) / maxV) * 100).toFixed(1) : 0}%</div></div>
+        </div>
+        <div class="hub-panels">
+          <div class="card hub-panel">
+            <div class="panel-tt">转化漏斗 <span class="panel-sub">（累计到达口径）</span></div>
+            <div class="fn-wrap">${funnelHtml}</div>
+          </div>
+          <div class="card hub-panel">
+            <div class="panel-tt">城市分布</div>
+            <div class="ct-wrap">${cityHtml}</div>
+          </div>
+        </div>`;
     }
 
     let page_ = 1;
