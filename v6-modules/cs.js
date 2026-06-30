@@ -8,38 +8,16 @@ window.render_cs_overview = async function(page) {
   const u = V6.user;
   page.innerHTML = '<div class="loading">你的数据正在加载中...</div>';
   await loadAllData();
-  const today = todayStr();
   const cs = (DB.cs || []).filter(x => x.teamId === u.teamId);
   const inv = (DB.invite || []).filter(x => x.csTeamId === u.teamId);
-
-  const monthStart = today.slice(0, 8) + '01';
-  const monthCs = cs.filter(x => x.date >= monthStart && x.date <= today);
-  const monthInv = inv.filter(x => (x.arriveTime || '').slice(0, 10) >= monthStart);
-
-  const mFans = monthCs.reduce((s, x) => s + (+x.addFans || 0), 0);
-  const mDeposit = monthCs.reduce((s, x) => s + (+x.depositCount || 0), 0);
-  const mAmount = monthCs.reduce((s, x) => s + (+x.depositAmount || 0), 0);
-  const mDepositRate = mFans > 0 ? mDeposit / mFans * 100 : 0;
-  const mInvited = monthInv.length;
-  const mArrived = monthInv.filter(x => x.status === 'arrived').length;
-  const mNoShow = monthInv.filter(x => x.status === 'no_show').length;
-  const mArriveRate = mFans > 0 ? mArrived / mFans * 100 : 0;
 
   page.innerHTML = `
     <div class="card" style="background:linear-gradient(135deg,var(--klein),var(--klein-deep));color:#fff;border:0">
       <h2 style="color:#fff;margin:0">${u.realName} 👋</h2>
-      <p style="opacity:.85;margin:4px 0 0">客服线 · ${u.teamId === 'cs_1' ? '1 部' : u.teamId === 'cs_2' ? '2 部' : u.teamId} · 本月数据 (${monthStart} ~ ${today})</p>
+      <p style="opacity:.85;margin:4px 0 0" id="csOvSub">客服线 · ${u.teamId === 'cs_1' ? '1 部' : u.teamId === 'cs_2' ? '2 部' : u.teamId}</p>
     </div>
-
-    <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">本月加粉</div><div class="kpi-value">${fmtNum(mFans)}</div></div>
-      <div class="kpi"><div class="kpi-label">本月定金数</div><div class="kpi-value" style="color:var(--klein)">${fmtNum(mDeposit)}</div><div class="kpi-foot">${fmtMoney(mAmount)}</div></div>
-      <div class="kpi"><div class="kpi-label">定金率</div><div class="kpi-value">${fmtPct(mDepositRate)}</div></div>
-      <div class="kpi"><div class="kpi-label">本月排客</div><div class="kpi-value">${fmtNum(mInvited)}</div></div>
-      <div class="kpi"><div class="kpi-label">已到店</div><div class="kpi-value" style="color:var(--success)">${fmtNum(mArrived)}</div><div class="kpi-foot">未到 ${mNoShow}</div></div>
-      <div class="kpi"><div class="kpi-label">到店率(到店/加粉)</div><div class="kpi-value">${mFans > 0 ? fmtPct(mArriveRate) : '-'}</div></div>
-    </div>
-
+    <div class="card" style="padding:14px 16px"><div id="csOvRange"></div></div>
+    <div id="csOvKpi" class="kpi-grid"></div>
     <div class="card">
       <h3>🚀 快捷入口</h3>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -51,6 +29,31 @@ window.render_cs_overview = async function(page) {
       </div>
     </div>
   `;
+
+  function renderKpi(r) {
+    const rCs = cs.filter(x => x.date >= r.start && x.date <= r.end);
+    const rInv = inv.filter(x => { const d = (x.arriveTime || '').slice(0, 10); return d >= r.start && d <= r.end; });
+    const fans = rCs.reduce((s, x) => s + (+x.addFans || 0), 0);
+    const deposit = rCs.reduce((s, x) => s + (+x.depositCount || 0), 0);
+    const amount = rCs.reduce((s, x) => s + (+x.depositAmount || 0), 0);
+    const depositRate = fans > 0 ? deposit / fans * 100 : 0;
+    const invited = rInv.length;
+    const arrived = rInv.filter(x => x.status === 'arrived').length;
+    const noShow = rInv.filter(x => x.status === 'no_show').length;
+    const arriveRate = fans > 0 ? arrived / fans * 100 : 0;
+    document.getElementById('csOvSub').textContent =
+      `客服线 · ${u.teamId === 'cs_1' ? '1 部' : u.teamId === 'cs_2' ? '2 部' : u.teamId} · ${r.label}（${r.start} ~ ${r.end}）`;
+    document.getElementById('csOvKpi').innerHTML = `
+      <div class="kpi"><div class="kpi-label">加粉</div><div class="kpi-value">${fmtNum(fans)}</div></div>
+      <div class="kpi"><div class="kpi-label">定金数</div><div class="kpi-value" style="color:var(--klein)">${fmtNum(deposit)}</div><div class="kpi-foot">${fmtMoney(amount)}</div></div>
+      <div class="kpi"><div class="kpi-label">定金率</div><div class="kpi-value">${fmtPct(depositRate)}</div></div>
+      <div class="kpi"><div class="kpi-label">排客</div><div class="kpi-value">${fmtNum(invited)}</div></div>
+      <div class="kpi"><div class="kpi-label">已到店</div><div class="kpi-value" style="color:var(--success)">${fmtNum(arrived)}</div><div class="kpi-foot">未到 ${noShow}</div></div>
+      <div class="kpi"><div class="kpi-label">到店率(到店/加粉)</div><div class="kpi-value">${fans > 0 ? fmtPct(arriveRate) : '-'}</div></div>`;
+  }
+
+  window.v6DateRange.mount('csOvRange', { preset: 'month', onChange: renderKpi });
+  renderKpi(window.v6DateRange.compute('month'));
 };
 
 // === 加粉/定金录入 ===
