@@ -11,8 +11,19 @@ window.render_store_customers = async function (page) {
         <input type="text" id="scSearch" class="sc-input" placeholder="搜索 姓名 / 手机号…" style="flex:1;min-width:180px;" />
         <button class="btn btn-primary" id="scNewBtn">+ 新建客户</button>
       </div>
-      <div class="muted" id="scCount" style="font-size:13px;color:#8a9099;margin-top:8px;"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:8px;">
+        <div class="muted" id="scCount" style="font-size:13px;color:#8a9099;"></div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="muted" style="font-size:12px;color:#8a9099;">每页</span>
+          <select id="scSize" class="sc-input" style="padding:5px 8px;font-size:13px;">
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+      </div>
       <div id="scList" style="margin-top:8px;"><div class="loading">加载中…</div></div>
+      <div id="scPager" style="margin-top:12px;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;"></div>
     </div>
 
     <div id="scDrawer" class="sc-drawer-bg" style="display:none;">
@@ -55,21 +66,36 @@ window.render_store_customers = async function (page) {
       .sc-prev-del{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:#d83931;color:#fff;border:none;font-size:13px;line-height:20px;cursor:pointer;}
       .sc-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:90;display:flex;align-items:center;justify-content:center;}
       .sc-lightbox img{max-width:94%;max-height:90%;border-radius:8px;}
+      .sc-pgbtn{display:inline-block;padding:7px 14px;border:1px solid #d9dde3;border-radius:8px;cursor:pointer;font-size:13px;background:#fff;color:#1f2329;}
+      .sc-pgbtn:hover{background:#f2f4f7;border-color:#c0c5cc;}
+      .sc-pgbtn[disabled]{opacity:.4;cursor:not-allowed;}
+      .sc-pginfo{font-size:13px;color:#646a73;min-width:90px;text-align:center;}
     </style>
   `;
   const $ = id => document.getElementById(id);
   let timer = null;
-  $('scSearch').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => loadList($('scSearch').value), 300); });
+  let curPage = 1, curQ = '', curSize = 20;
+  $('scSearch').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { curQ = $('scSearch').value; curPage = 1; loadList(); }, 300); });
+  $('scSize').addEventListener('change', () => { curSize = parseInt($('scSize').value) || 20; curPage = 1; loadList(); });
   $('scNewBtn').onclick = () => openForm('create');
-  await loadList('');
+  await loadList();
 
-  async function loadList(q) {
+  async function loadList() {
     const el = $('scList');
+    el.innerHTML = '<div class="loading">加载中…</div>';
     try {
-      const d = await api.get('/api/customer/store-list?limit=60&q=' + encodeURIComponent(q || ''));
+      const d = await api.get('/api/customer/store-list?page=' + curPage + '&size=' + curSize + '&q=' + encodeURIComponent(curQ || ''));
       if (!d.ok) throw new Error(d.error || '加载失败');
-      $('scCount').textContent = '本店客户 ' + d.total + ' 位' + (q ? '（已筛选）' : '');
-      if (!d.customers.length) { el.innerHTML = '<div style="color:#8a9099;font-size:13px;padding:10px;">没有客户。新客可点右上「+ 新建客户」。</div>'; return; }
+      const totalPage = d.totalPage || 1;
+      if (curPage > totalPage) { curPage = totalPage; }
+      const from = d.total ? (curPage - 1) * curSize + 1 : 0;
+      const to = Math.min(curPage * curSize, d.total);
+      $('scCount').textContent = '本店客户 ' + d.total + ' 位' + (curQ ? '（已筛选）' : '') + (d.total ? ` · 显示 ${from}-${to}` : '');
+      if (!d.customers.length) {
+        el.innerHTML = '<div style="color:#8a9099;font-size:13px;padding:10px;">没有客户。新客可点右上「+ 新建客户」。</div>';
+        $('scPager').innerHTML = '';
+        return;
+      }
       el.innerHTML = d.customers.map(c => {
         const tags = (c.arriveCount > 1 ? '<span class="sc-tag sc-rep">复购×' + c.arriveCount + '</span>' : '')
           + (c.dealCount > 0 ? '<span class="sc-tag sc-deal">成交</span>' : '');
@@ -79,7 +105,24 @@ window.render_store_customers = async function (page) {
         </div>`;
       }).join('');
       el.querySelectorAll('.sc-row').forEach(r => r.onclick = () => showDetail(r.dataset.key));
+      renderPager(totalPage);
     } catch (e) { el.innerHTML = '<div style="color:#d83931;">加载失败：' + esc(e.message) + '</div>'; }
+  }
+
+  function renderPager(totalPage) {
+    const box = $('scPager');
+    if (totalPage <= 1) { box.innerHTML = ''; return; }
+    box.innerHTML = `
+      <span class="sc-pgbtn" id="scFirst" ${curPage <= 1 ? 'disabled' : ''}>« 首页</span>
+      <span class="sc-pgbtn" id="scPrev" ${curPage <= 1 ? 'disabled' : ''}>‹ 上一页</span>
+      <span class="sc-pginfo">${curPage} / ${totalPage} 页</span>
+      <span class="sc-pgbtn" id="scNext" ${curPage >= totalPage ? 'disabled' : ''}>下一页 ›</span>
+      <span class="sc-pgbtn" id="scLast" ${curPage >= totalPage ? 'disabled' : ''}>末页 »</span>`;
+    const go = (p) => { if (p < 1 || p > totalPage || p === curPage) return; curPage = p; loadList(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    $('scFirst').onclick = () => go(1);
+    $('scPrev').onclick = () => go(curPage - 1);
+    $('scNext').onclick = () => go(curPage + 1);
+    $('scLast').onclick = () => go(totalPage);
   }
 
   function closeDrawer() { $('scDrawer').style.display = 'none'; }

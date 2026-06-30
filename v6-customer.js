@@ -488,7 +488,6 @@ module.exports = function (app, db, deps) {
       const user = req.v6User;
       const allow = visibleStoreTeams(user); // null=全部 或 [teamId]
       const q = norm(req.query.q).toLowerCase();
-      const limit = Math.min(parseInt(req.query.limit) || 50, 100);
       let list = visibleCustomersForUser(user);
       if (allow) list = list.filter(c => c.storeTeams.some(t => allow.includes(t)));
       if (q) list = list.filter(c =>
@@ -497,12 +496,17 @@ module.exports = function (app, db, deps) {
         (c.nickname && c.nickname.toLowerCase().includes(q)));
       list.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
       const teams = teamNameMap();
-      const out = list.slice(0, limit).map(c => ({
+      const total = list.length;
+      // 分页：page 从 1 开始，size 默认 20（最大 100）。兼容旧 limit 参数。
+      const size = Math.min(parseInt(req.query.size) || parseInt(req.query.limit) || 20, 100);
+      const page = Math.max(parseInt(req.query.page) || 1, 1);
+      const offset = (page - 1) * size;
+      const out = list.slice(offset, offset + size).map(c => ({
         key: c.key, name: c.name, phone: c.phone, nickname: c.nickname,
         arriveCount: c.arriveCount, dealCount: c.dealCount, ltv: c.ltv, lastSeen: c.lastSeen,
         storeTeams: c.storeTeams.map(t => (teams[t] && teams[t].name) || t),
       }));
-      res.json({ ok: true, total: list.length, customers: out });
+      res.json({ ok: true, total, page, size, totalPage: Math.max(Math.ceil(total / size), 1), customers: out });
     } catch (e) { res.json({ ok: false, error: e.message || String(e) }); }
   });
 
