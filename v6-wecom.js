@@ -79,16 +79,19 @@ module.exports = function (app, db, deps) {
   )`);
 
   // 首次：写入已确认的客服个人映射（幂等）
+  // id 用登录 username 作稳定锚点；name 用中文真名（与 shijing_users.realName 一致）
   const seedStaff = [
-    { id: 'xm1', name: 'WP-XHB', teamId: 'cs_1', wecomUserid: 'JianFen' },
-    { id: 'xm2', name: 'WP-ZXY', teamId: 'cs_1', wecomUserid: 'ZhouJiaXiaoYu' },
-    { id: 'CS1', name: '曾意峰', teamId: 'cs_2', wecomUserid: 'JingXuMeiRong' },
+    { id: 'xiehaobin',  name: '谢昊斌-丽娜', teamId: 'cs_1', wecomUserid: 'JianFen' },
+    { id: 'zhouxiaoyu', name: '周小玉',     teamId: 'cs_1', wecomUserid: 'ZhouJiaXiaoYu' },
+    { id: 'zengyifeng', name: '曾意峰',     teamId: 'cs_2', wecomUserid: 'JingXuMeiRong' },
   ];
   const upStaff = db.prepare(`INSERT INTO shijing_staff(id,name,teamId,role,wecomUserid,active,createdAt,updatedAt)
     VALUES(@id,@name,@teamId,'cs',@wecomUserid,1,@ts,@ts)
     ON CONFLICT(id) DO UPDATE SET name=excluded.name, teamId=excluded.teamId,
       wecomUserid=excluded.wecomUserid, updatedAt=excluded.updatedAt`);
   for (const s of seedStaff) upStaff.run({ ...s, ts: Date.now() });
+  // 清理历史遗留旧 id 种子（xm1/xm2/CS1），避免同一企微号在 staff 表重复
+  try { db.prepare("DELETE FROM shijing_staff WHERE id IN ('xm1','xm2','CS1')").run(); } catch (e) {}
 
   // ============================================================
   // 1. 企微 API 封装
