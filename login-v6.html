@@ -39,29 +39,39 @@
   }
   /* === 左侧 hero === */
   .hero {
-    background: linear-gradient(135deg, var(--klein) 0%, var(--klein-deep) 100%);
+    background: linear-gradient(150deg, #003ac9 0%, var(--klein) 42%, var(--klein-deep) 100%);
     color: #fff;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 48px;
+    padding: 56px 52px;
     position: relative;
     overflow: hidden;
   }
   .hero::before {
     content: "";
     position: absolute;
-    top: -10%; right: -10%;
-    width: 60%; height: 60%;
-    background: radial-gradient(circle, rgba(255,255,255,.10) 0%, transparent 70%);
+    top: -12%; right: -8%;
+    width: 56%; height: 56%;
+    background: radial-gradient(circle, rgba(255,255,255,.12) 0%, transparent 68%);
     pointer-events: none;
   }
   .hero::after {
     content: "";
     position: absolute;
-    bottom: -20%; left: -10%;
-    width: 50%; height: 50%;
-    background: radial-gradient(circle, rgba(255,255,255,.06) 0%, transparent 70%);
+    bottom: -18%; left: -12%;
+    width: 48%; height: 48%;
+    background: radial-gradient(circle, rgba(255,216,107,.10) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  /* 细网格纹理增加质感 */
+  .hero-grid {
+    position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(ellipse at 70% 30%, #000 0%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse at 70% 30%, #000 0%, transparent 75%);
     pointer-events: none;
   }
   .hero-content { position: relative; z-index: 1; }
@@ -105,13 +115,24 @@
   }
 
   .hero-version {
-    display: inline-block;
-    padding: 4px 10px;
-    background: rgba(255,255,255,.14);
-    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.16);
+    border-radius: 999px;
     font-size: 11px;
     letter-spacing: 1px;
-    margin-bottom: 24px;
+    margin-bottom: 26px;
+    backdrop-filter: blur(4px);
+  }
+  .hero-version::before {
+    content: "";
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #4ade80;
+    box-shadow: 0 0 0 3px rgba(74,222,128,.25);
   }
   .hero h1 {
     font-size: 44px;
@@ -141,6 +162,26 @@
     max-width: 420px;
     line-height: 1.7;
   }
+  /* hero 特性点 */
+  .hero-feats {
+    display: flex;
+    gap: 22px;
+    margin-top: 30px;
+    position: relative; z-index: 1;
+  }
+  .hero-feat {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    opacity: .82;
+  }
+  .hero-feat .dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: #ffd86b;
+    flex: none;
+  }
   .hero-foot {
     font-size: 12px;
     opacity: .55;
@@ -167,12 +208,18 @@
   .form {
     width: 100%;
     max-width: 360px;
+    animation: formIn .4s cubic-bezier(.4,0,.2,1);
+  }
+  @keyframes formIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
   }
   .form-title {
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 600;
     margin: 0 0 8px;
     color: var(--ink);
+    letter-spacing: -.3px;
   }
   .form-sub {
     font-size: 13px;
@@ -193,19 +240,21 @@
   }
   .input {
     width: 100%;
-    height: 44px;
+    height: 46px;
     padding: 0 14px;
-    background: var(--paper);
-    border: 1px solid var(--silver);
-    border-radius: 4px;
+    background: var(--silver-bg);
+    border: 1px solid transparent;
+    border-radius: 9px;
     color: var(--ink);
     font-size: 14px;
     outline: none;
-    transition: border-color .15s, box-shadow .15s;
+    transition: border-color .18s, box-shadow .18s, background .18s;
     font-family: inherit;
   }
   .input::placeholder { color: #b9bec7; }
+  .input:hover { background: #f0f1f4; }
   .input:focus {
+    background: var(--paper);
     border-color: var(--klein);
     box-shadow: 0 0 0 3px rgba(0,47,167,.12);
   }
@@ -213,8 +262,8 @@
   .pwd-toggle {
     position: absolute;
     right: 0; top: 0;
-    height: 44px;
-    width: 44px;
+    height: 46px;
+    width: 48px;
     background: transparent;
     border: 0;
     color: var(--ink-mute);
@@ -246,15 +295,15 @@
 
   .btn {
     width: 100%;
-    height: 46px;
+    height: 48px;
     background: var(--klein);
     color: #fff;
     border: 0;
-    border-radius: 4px;
+    border-radius: 9px;
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    margin-top: 8px;
+    margin-top: 10px;
     transition: background .15s, transform .15s, box-shadow .15s;
     letter-spacing: 4px;
     box-shadow: var(--shadow-btn);
@@ -289,8 +338,8 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   .alert {
-    padding: 10px 14px;
-    border-radius: 4px;
+    padding: 11px 14px;
+    border-radius: 8px;
     font-size: 13px;
     margin-bottom: 16px;
     display: none;
@@ -343,6 +392,8 @@
     .hero-version { margin-bottom: 14px; }
     .hero-logo-img { width: 44px; height: 44px; }
     .hero-logo-zh { font-size: 20px; }
+    .hero-feats { display: none; }
+    .hero-grid { display: none; }
     .form-pane { padding: 28px 24px 40px; }
     /* 移动端：输入框/下拉字号 ≥16px，避免 iOS Safari 聚焦时自动放大页面 */
     .input, select.input { font-size: 16px; }
@@ -352,6 +403,7 @@
 <body>
 <div class="layout">
   <div class="hero">
+    <div class="hero-grid"></div>
     <!-- 顶部 logo -->
     <div class="hero-content">
       <div class="hero-logo">
@@ -367,15 +419,20 @@
 
     <!-- 中部 slogan -->
     <div class="hero-content">
-      <span class="hero-version">v6 · DEV</span>
+      <span class="hero-version">客户中心 CRM</span>
       <h1>专注<em>胡须</em><br>所以更专业</h1>
-      <p>内部协作 AI 平台</p>
+      <p>以客户为中心的一体化运营平台，打通投放、客服、门店全链路数据。</p>
+      <div class="hero-feats">
+        <span class="hero-feat"><span class="dot"></span>客户全生命周期</span>
+        <span class="hero-feat"><span class="dot"></span>多角色协同</span>
+        <span class="hero-feat"><span class="dot"></span>实时业绩归因</span>
+      </div>
     </div>
 
     <!-- 底部版权 -->
     <div class="hero-foot">
       <span>© 2026 仕净 · 内部使用</span>
-      <span>v6.0.0-dev</span>
+      <span>v6</span>
     </div>
   </div>
 
@@ -389,7 +446,7 @@
       <div class="field">
         <label class="label" for="username">用户名</label>
         <div class="input-wrap">
-          <input type="text" class="input" id="username" name="username" placeholder="如 nick / CC1 / XM" autocomplete="username" autocapitalize="off" autocorrect="off" required>
+          <input type="text" class="input" id="username" name="username" placeholder="请输入登录用户名" autocomplete="username" autocapitalize="off" autocorrect="off" required>
         </div>
       </div>
 
