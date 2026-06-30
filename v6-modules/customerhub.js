@@ -171,7 +171,53 @@
     loadList();
   }
 
+  // ============ HQ 专属：客服企微绑定管理 ============
+  async function renderCsMapping(page) {
+    page.innerHTML = `<div class="card"><div class="loading">加载客服映射…</div></div>`;
+    const d = await hubApi('cs-mapping');
+    if (!d.ok) { page.innerHTML = `<div class="card"><div class="muted">加载失败：${esc(d.error)}</div></div>`; return; }
+    const wecomOpts = `<option value="">未配置</option>` + d.wecomList.map(w =>
+      `<option value="${esc(w.wecomUserid)}">${esc(w.wecomUserid)}（${w.customerCount}客户）</option>`).join('');
+    page.innerHTML = `
+      <div class="card">
+        <div style="font-size:15px;font-weight:500;margin-bottom:6px;">客服企微绑定</div>
+        <div class="muted" style="font-size:12px;color:#8a9099;margin-bottom:14px;">
+          绑定后，该客服登录"客户中心"只能看到自己名下的企微好友。一个企微号只应绑一位客服。</div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead><tr style="text-align:left;color:#8a9099;border-bottom:1px solid #eef0f3;">
+            <th style="padding:8px 6px;">客服账号</th><th>姓名</th><th>团队</th><th>企微号绑定</th><th></th>
+          </tr></thead>
+          <tbody>${d.mappings.map((m, i) => `
+            <tr style="border-bottom:1px solid #f4f5f7;">
+              <td style="padding:9px 6px;font-weight:500;">${esc(m.username)}</td>
+              <td>${esc(m.realName || '')}</td>
+              <td style="color:#8a9099;">${esc(m.csTeamId || '')}</td>
+              <td><select class="hub-input" data-u="${esc(m.username)}" data-rn="${esc(m.realName || '')}" data-tm="${esc(m.csTeamId || '')}" style="font-size:13px;padding:5px 8px;">
+                ${wecomOpts.replace(`value="${esc(m.wecomUserid || '')}"`, `value="${esc(m.wecomUserid || '')}" selected`)}
+              </select></td>
+              <td><span class="hub-pgbtn csmap-save" data-i="${i}" style="padding:5px 12px;">保存</span></td>
+            </tr>`).join('')}</tbody>
+        </table>
+        <div id="csmapMsg" style="margin-top:10px;font-size:13px;"></div>
+      </div>
+      <style>.hub-input{padding:9px 12px;border:1px solid #d9dde3;border-radius:8px;background:#fff;}
+        .hub-pgbtn{display:inline-block;border:1px solid #d9dde3;border-radius:8px;cursor:pointer;font-size:13px;background:#fff;}
+        .hub-pgbtn:hover{background:#f7f8fa;}</style>`;
+    page.querySelectorAll('.csmap-save').forEach(btn => {
+      btn.onclick = async () => {
+        const sel = page.querySelectorAll('select.hub-input')[+btn.dataset.i];
+        const body = { username: sel.dataset.u, realName: sel.dataset.rn, csTeamId: sel.dataset.tm, wecomUserid: sel.value };
+        const r = await fetch('/api/hub/cs-mapping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) });
+        const j = await r.json();
+        const msg = document.getElementById('csmapMsg');
+        msg.textContent = j.ok ? `✅ ${body.username} 已绑定 ${body.wecomUserid || '（清空）'}` : `❌ ${j.error}`;
+        msg.style.color = j.ok ? '#2ba471' : '#e23b3b';
+      };
+    });
+  }
+
   window.render_hq_customerhub = renderHub;
+  window.render_hq_csmapping = renderCsMapping;
   window.render_store_customerhub = renderHub;
   window.render_cs_customerhub = renderHub;
 })();

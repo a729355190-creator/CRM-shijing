@@ -18,11 +18,15 @@ module.exports = function (app, db, deps) {
   }
 
   // ---- 取某客服 wecomUserid（用于"只看自己名下好友"）----
+  // 匹配优先级：username(最稳定) > realName > id，任一命中即可
+  // 注：登录账号 username 与 staff.id 常一致(如 zhouxiaoyu)，realName 与 staff.name 一致(如 WP-ZXY)
   function staffWecomId(user) {
     if (!user) return null;
     try {
-      const s = db.prepare('SELECT wecomUserid FROM shijing_staff WHERE id=? OR name=?').get(user.username, user.realName);
-      return s ? s.wecomUserid : null;
+      const s = db.prepare(
+        'SELECT wecomUserid FROM shijing_staff WHERE id=? OR id=? OR name=? OR name=?'
+      ).get(user.username, user.id, user.realName, user.username);
+      return s && s.wecomUserid ? s.wecomUserid : null;
     } catch { return null; }
   }
 
@@ -155,5 +159,52 @@ module.exports = function (app, db, deps) {
     }
   });
 
-  console.log('[v6-customer-hub] mounted: /api/hub/customers, /api/hub/customer/:ext, /api/hub/stats');
+  // ============ 4. 客服企微映射管理（仅总部）============
+  // 列出所有客服账号 + 当前企微映射 + 可分配的企微号清单
+  app.get('/api/hub/cs-mapping', v6HQRequired, (req, res) => {
+    try {
+      // 所有 cs 角色登录用户
+      const users = db.prepare('SELECT id, data FROM shijing_users').all()
+        .map(r => { try { const d = JSON.parse(r.data); return { id: r.id, ...d }; } catch { return null; } })
+        .filter(u => u && u.role === 'cs');
+      // staff 映射
+      const staffList = db.prepare('SELECT id, name, wecomUserid FROM shijing_staff').all();
+      const rows = users.map(u => {
+        const s = staffList.find(x => x.id === u.username || x.id === u.id || x.name === u.realName || x.name === u.username);
+        return {
+          username: u.username, realName: u.realName, csTeamId: u.csTeamId || u.teamId,
+          wecomUserid: s ? s.wecomUserid : null, staffId: s ? s.id : null,
+        };
+      });
+      // 企微号清单(带客户数)
+      const wecomList = db.prepare(`SELECT follow_userid AS wecomUserid, COUNT(*) AS customerCount
+        FROM shijing_wecom_customers WHERE follow_userid IS NOT NULL AND follow_userid <> '' GROUP BY follow_userid`).all();
+      res.json({ ok: true, mappings: rows, wecomList });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // 设置某客服的企微映射（仅总部）
+  app.post('/api/hub/cs-mapping', v6HQRequired, (req, res) => {
+    try {
+      const { username, realName, wecomUserid, csTeamId } = req.body || {};
+      if (!username) return res.json({ ok: false, error: '缺少 username' });
+      const now = Date.now();
+      // 以 username 作为 staff.id（稳定关联）；upsert
+      const exist = db.prepare('SELECT id FROM shijing_staff WHERE id=?').get(username);
+      if (exist) {
+        db.prepare('UPDATE shijing_staff SET name=?, wecomUserid=?, teamId=?, role=?, updatedAt=? WHERE id=?')
+          .run(realName || username, wecomUserid || '', csTeamId || '', 'cs', now, username);
+      } else {
+        db.prepare('INSERT INTO shijing_staff (id, name, teamId, role, wecomUserid, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)')
+          .run(username, realName || username, csTeamId || '', 'cs', wecomUserid || '', now, now);
+      }
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  console.log('[v6-customer-hub] mounted: /api/hub/customers, /api/hub/customer/:ext, /api/hub/stats, /api/hub/cs-mapping');
 };
