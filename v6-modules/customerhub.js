@@ -44,15 +44,23 @@
         <div id="hubList" style="margin-top:12px;"><div class="loading">加载中…</div></div>
         <div id="hubPager" style="margin-top:12px;text-align:center;"></div>
       </div>
-      <div id="hubDetail"></div>
       <style>
         .hub-input{padding:9px 12px;border:1px solid #d9dde3;border-radius:8px;font-size:16px;background:#fff;}
         .hub-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;}
         .hub-kpi{background:#f7f8fa;border-radius:10px;padding:12px 14px;}
         .hub-kpi .lbl{font-size:13px;color:#8a9099;}
         .hub-kpi .val{font-size:22px;font-weight:600;color:#1f2329;margin-top:2px;}
-        .hub-row{display:flex;align-items:center;justify-content:space-between;padding:11px 13px;border:1px solid #eef0f3;border-radius:10px;margin-bottom:8px;cursor:pointer;transition:.15s;}
-        .hub-row:hover{background:#f7f8fa;border-color:#d9dde3;}
+        .hub-item{border:1px solid #eef0f3;border-radius:10px;margin-bottom:8px;overflow:hidden;transition:.15s;}
+        .hub-item.open{border-color:#c9d2ec;box-shadow:0 2px 10px rgba(0,47,167,.06);}
+        .hub-row{display:flex;align-items:center;justify-content:space-between;padding:11px 13px;cursor:pointer;transition:.15s;}
+        .hub-row:hover{background:#f7f8fa;}
+        .hub-item.open>.hub-row{background:#f4f6fc;}
+        .hub-caret{color:#a4abb6;font-size:12px;transition:transform .18s;display:inline-block;}
+        .hub-item.open .hub-caret{color:#002fa7;}
+        .hub-inline{border-top:1px solid #eef0f3;background:#fcfcfd;animation:hubFade .2s ease;}
+        .hub-inline-load{padding:20px;text-align:center;}
+        .hub-inline-body{padding:16px 16px 18px;}
+        @keyframes hubFade{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:translateY(0);}}
         .hub-av{width:34px;height:34px;border-radius:50%;background:#eef0f3;margin-right:10px;object-fit:cover;flex:none;}
         .hub-nm{font-weight:500;font-size:14px;}
         .hub-ph{font-size:12px;color:#8a9099;margin-left:8px;}
@@ -162,18 +170,27 @@
       else {
         box.innerHTML = data.items.map(c => {
           const stg = c.stage || 'lead';
-          return `<div class="hub-row" data-ext="${esc(c.external_userid)}">
-            <div style="display:flex;align-items:center;min-width:0;">
-              ${c.avatar ? `<img class="hub-av" src="${esc(c.avatar)}"/>` : `<div class="hub-av"></div>`}
-              <div style="min-width:0;">
-                <div><span class="hub-nm">${esc(c.real_name || c.name || '(未命名)')}</span>${c.phone ? `<span class="hub-ph">${esc(c.phone)}</span>` : ''}</div>
-                <div style="font-size:12px;color:#8a9099;margin-top:2px;">${esc(c.source_city || '')} ${c.name && c.real_name ? '· ' + esc(c.name) : ''}</div>
+          return `<div class="hub-item" data-ext="${esc(c.external_userid)}">
+            <div class="hub-row">
+              <div style="display:flex;align-items:center;min-width:0;">
+                ${c.avatar ? `<img class="hub-av" src="${esc(c.avatar)}"/>` : `<div class="hub-av"></div>`}
+                <div style="min-width:0;">
+                  <div><span class="hub-nm">${esc(c.real_name || c.name || '(未命名)')}</span>${c.phone ? `<span class="hub-ph">${esc(c.phone)}</span>` : ''}</div>
+                  <div style="font-size:12px;color:#8a9099;margin-top:2px;">${esc(c.source_city || '')} ${c.name && c.real_name ? '· ' + esc(c.name) : ''}</div>
+                </div>
               </div>
+              <span style="display:flex;align-items:center;gap:8px;">
+                <span class="hub-badge" style="background:${STAGE_COLOR[stg]}">${STAGE_LABEL[stg]}</span>
+                <span class="hub-caret">▸</span>
+              </span>
             </div>
-            <span class="hub-badge" style="background:${STAGE_COLOR[stg]}">${STAGE_LABEL[stg]}</span>
+            <div class="hub-inline" style="display:none;"></div>
           </div>`;
         }).join('');
-        box.querySelectorAll('.hub-row').forEach(el => el.onclick = () => showDetail(el.dataset.ext));
+        box.querySelectorAll('.hub-item').forEach(item => {
+          const row = item.querySelector('.hub-row');
+          row.onclick = () => toggleDetail(item);
+        });
       }
       // 分页
       const totalPage = Math.ceil(data.total / data.size) || 1;
@@ -184,12 +201,34 @@
       if (next) next.onclick = () => { if (page_ < totalPage) { page_++; loadList(); } };
     }
 
-    async function showDetail(ext) {
-      const box = document.getElementById('hubDetail');
-      box.innerHTML = `<div class="card" style="margin-top:14px;"><div class="loading">加载档案…</div></div>`;
-      box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    async function toggleDetail(item) {
+      const ext = item.dataset.ext;
+      const box = item.querySelector('.hub-inline');
+      const caret = item.querySelector('.hub-caret');
+      // 已展开 → 收起
+      if (item.classList.contains('open')) {
+        item.classList.remove('open');
+        box.style.display = 'none';
+        box.innerHTML = '';
+        if (caret) caret.textContent = '▸';
+        return;
+      }
+      // 先收起同列表其它已展开的行（每次只展开一个，避免页面过长）
+      const list = document.getElementById('hubList');
+      list.querySelectorAll('.hub-item.open').forEach(other => {
+        other.classList.remove('open');
+        const ob = other.querySelector('.hub-inline');
+        if (ob) { ob.style.display = 'none'; ob.innerHTML = ''; }
+        const oc = other.querySelector('.hub-caret');
+        if (oc) oc.textContent = '▸';
+      });
+      // 展开当前
+      item.classList.add('open');
+      if (caret) caret.textContent = '▾';
+      box.style.display = 'block';
+      box.innerHTML = `<div class="hub-inline-load"><div class="loading">加载档案…</div></div>`;
       const d = await hubApi('customer/' + encodeURIComponent(ext));
-      if (!d.ok) { box.innerHTML = `<div class="card" style="margin-top:14px;"><div class="muted">加载失败：${esc(d.error)}</div></div>`; return; }
+      if (!d.ok) { box.innerHTML = `<div class="hub-inline-load"><div class="muted">加载失败：${esc(d.error)}</div></div>`; return; }
       const c = d.customer;
       const stg = c.stage || 'lead';
       const eventsHtml = (d.events && d.events.length) ? d.events.map(e => {
@@ -208,7 +247,7 @@
           <span style="font-weight:500;">¥${dl.amount || 0}</span>
         </div>`).join('') : `<div class="muted" style="color:#8a9099;font-size:13px;">暂无成交记录</div>`;
 
-      box.innerHTML = `<div class="card" style="margin-top:14px;">
+      box.innerHTML = `<div class="hub-inline-body">
         <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
           ${c.avatar ? `<img class="hub-av" style="width:54px;height:54px;" src="${esc(c.avatar)}"/>` : `<div class="hub-av" style="width:54px;height:54px;"></div>`}
           <div>
@@ -227,7 +266,7 @@
         ${c.phone ? `<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
           <span class="hub-pgbtn hub-add-deal" style="background:#2ba471;color:#fff;border-color:#2ba471;padding:7px 16px;">+ 新增到店/复购</span>
         </div>` : `<div style="margin-top:12px;font-size:12px;color:#e23b3b;">该客户暂无手机号，无法记录到店/复购（需先在排客时绑定手机号）</div>`}
-        <div id="hubAddForm" style="display:none;margin-top:12px;padding:14px;background:#f7f8fa;border-radius:10px;"></div>
+        <div class="hubAddForm" style="display:none;margin-top:12px;padding:14px;background:#f7f8fa;border-radius:10px;"></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:18px;">
           <div>
             <div style="font-size:14px;font-weight:500;margin-bottom:6px;">生命周期轨迹</div>
@@ -243,7 +282,7 @@
       // 新增到店/复购 表单
       const addBtn = box.querySelector('.hub-add-deal');
       if (addBtn) {
-        const formBox = document.getElementById('hubAddForm');
+        const formBox = box.querySelector('.hubAddForm');
         addBtn.onclick = () => {
           if (formBox.style.display === 'block') { formBox.style.display = 'none'; return; }
           formBox.style.display = 'block';
@@ -266,21 +305,25 @@
             </div>`;
           formBox.querySelector('.hub-do-cancel').onclick = () => { formBox.style.display = 'none'; };
           formBox.querySelector('.hub-do-save').onclick = async () => {
-            const amount = +document.getElementById('ad_amount').value || 0;
+            const amount = +formBox.querySelector('#ad_amount').value || 0;
             const body = {
               name: c.real_name || c.name, phone: c.phone,
               isOperated: '是', opAmount: 0,
               isClosed: amount > 0 ? '是' : '否', closedAmount: amount,
-              performer: document.getElementById('ad_perf').value.trim(),
-              remark: (document.getElementById('ad_project').value.trim() + ' ' + document.getElementById('ad_remark').value.trim()).trim(),
+              performer: formBox.querySelector('#ad_perf').value.trim(),
+              remark: (formBox.querySelector('#ad_project').value.trim() + ' ' + formBox.querySelector('#ad_remark').value.trim()).trim(),
               customerType: '老客',
             };
-            const msg = document.getElementById('ad_msg');
+            const msg = formBox.querySelector('#ad_msg');
             msg.textContent = '保存中…'; msg.style.color = '#8a9099';
             try {
               const r = await fetch('/api/customer/store-visit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) });
               const j = await r.json();
-              if (j.ok) { msg.textContent = '✅ 已记录'; msg.style.color = '#2ba471'; setTimeout(() => showDetail(ext), 700); }
+              if (j.ok) {
+                msg.textContent = '✅ 已记录'; msg.style.color = '#2ba471';
+                // 重新加载当前行详情（先收起再展开=刷新）
+                setTimeout(() => { item.classList.remove('open'); toggleDetail(item); }, 700);
+              }
               else { msg.textContent = '❌ ' + j.error; msg.style.color = '#e23b3b'; }
             } catch (e) { msg.textContent = '❌ ' + e.message; msg.style.color = '#e23b3b'; }
           };
