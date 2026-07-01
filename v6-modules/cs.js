@@ -66,8 +66,8 @@ window.render_cs_cs_input = async function(page) {
   draw();
   function draw() {
   const existing = (DB.cs || []).find(x => x.date === selDate && ((x.createdByUserId || x.lastEditByUserId) ? (x.createdByUserId === u.id || x.lastEditByUserId === u.id) : x.teamId === u.teamId));
-  // 自动统计选定日排客数（来自 invite 表，按 csTeamId 选定日 arriveTime）
-  const todayInviteCount = (DB.invite || []).filter(x => x.csTeamId === u.teamId && (x.arriveTime || '').slice(0, 10) === selDate).length;
+  // 自动统计选定日"本人"排客数（来自 invite 表，按 csUserId 归属到个人 + 选定日 arriveTime）
+  const todayInviteCount = (DB.invite || []).filter(x => x.csUserId === u.id && (x.arriveTime || '').slice(0, 10) === selDate).length;
 
   page.innerHTML = `
     <div class="card">
@@ -93,9 +93,9 @@ window.render_cs_cs_input = async function(page) {
             <input type="number" class="input" id="f_depositCount" min="0" placeholder="今日收到定金的客户数" value="${existing?existing.depositCount||0:''}">
           </div>
           <div>
-            <label style="display:block;font-size:12px;color:var(--ink-soft);margin-bottom:6px">排客数 <span style="color:var(--ink-mute);font-weight:400">（自动统计）</span></label>
+            <label style="display:block;font-size:12px;color:var(--ink-soft);margin-bottom:6px">排客数 <span style="color:var(--ink-mute);font-weight:400">（我本人当日自动统计）</span></label>
             <input type="number" class="input" id="f_inviteCount" value="${todayInviteCount}" disabled style="background:var(--silver-bg);color:var(--ink-soft);cursor:not-allowed">
-            <div class="muted" style="font-size:11px;margin-top:4px">系统按"排客登记"自动统计，无需手填</div>
+            <div class="muted" style="font-size:11px;margin-top:4px">按你本人「排客登记」自动统计，无需手填</div>
           </div>
           <div>
             <label style="display:block;font-size:12px;color:var(--ink-soft);margin-bottom:6px">定金金额（元）</label>
