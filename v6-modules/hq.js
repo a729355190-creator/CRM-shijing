@@ -797,7 +797,7 @@ window.render_hq_invite = async function (page) {
     if (F.store && x.storeTeamId !== F.store) return false;
     if (F.kw) {
       const k = F.kw.toLowerCase();
-      if (!(x.customerName || '').toLowerCase().includes(k) && !(x.phone || '').includes(k)) return false;
+      if (!(x.customerName || '').toLowerCase().includes(k) && !(x.phone || '').includes(k) && !(x.wechatNickname || '').toLowerCase().includes(k)) return false;
     }
     return true;
   });
@@ -837,7 +837,7 @@ window.render_hq_invite = async function (page) {
           <option value="">全部门店</option>
           ${storeTeams.map(t => `<option value="${t.id}" ${F.store === t.id ? 'selected' : ''}>${t.name}${t.deleted ? '(停用)' : ''}</option>`).join('')}
         </select>
-        <input class="input" id="hi_kw" value="${F.kw}" placeholder="客户/电话" style="width:140px;height:32px;font-size:12px"/>
+        <input class="input" id="hi_kw" value="${F.kw}" placeholder="客户/电话/微信昵称" style="width:160px;height:32px;font-size:12px"/>
         <button class="btn btn-primary" onclick="applyHQInviteFilter()">筛选</button>
         <button class="btn" onclick="resetHQInviteFilter()">重置</button>
       </div>
@@ -846,10 +846,10 @@ window.render_hq_invite = async function (page) {
       </div>
       ${list.length === 0 ? '<p class="muted" style="margin-top:16px">无匹配数据</p>' :
       `<div class="table-wrap" style="margin-top:12px"><table>
-        <thead><tr><th>客户</th><th>电话</th><th>到店时间</th><th>客服</th><th>门店</th><th>状态</th><th>备注</th></tr></thead>
+        <thead><tr><th>客户</th><th>微信昵称</th><th>电话</th><th>到店时间</th><th>客服</th><th>门店</th><th>状态</th><th>备注</th></tr></thead>
         <tbody>${list.slice(0, 500).map(x => `<tr>
-          <td>${x.customerName || '-'}</td><td>${x.phone || '-'}</td><td>${(x.arriveTime || '').replace('T', ' ')}</td>
-          <td>${x.csTeamName || '-'}</td><td>${(DB.teams[x.storeTeamId] && DB.teams[x.storeTeamId].name) || '-'}</td>
+          <td>${esc(x.customerName || '-')}</td><td>${x.wechatNickname ? esc(x.wechatNickname) : '<span style="color:var(--ink-mute)">-</span>'}</td><td>${esc(x.phone || '-')}</td><td>${(x.arriveTime || '').replace('T', ' ')}</td>
+          <td>${esc(x.csTeamName || '-')}</td><td>${esc((DB.teams[x.storeTeamId] && DB.teams[x.storeTeamId].name) || '-')}</td>
           <td>${tag(x.status)}</td>
           <td style="font-size:11px;color:var(--ink-mute);max-width:280px">${x.cancelReason ? '取消：' + x.cancelReason : (x.noShowFeedback ? '未到店反馈' : (x.remark || '-'))}</td>
         </tr>`).join('')}</tbody>
