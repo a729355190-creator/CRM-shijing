@@ -206,5 +206,25 @@ module.exports = function (app, db, deps) {
     }
   });
 
-  console.log('[v6-customer-hub] mounted: /api/hub/customers, /api/hub/customer/:ext, /api/hub/stats, /api/hub/cs-mapping');
+  // 批量取企微客户 昵称+头像（门店待到店前置展示用）
+  // GET /api/hub/wecom-brief?ext=id1,id2,id3  → { ok, map:{ ext:{name,avatar} } }
+  app.get('/api/hub/wecom-brief', v6Required, (req, res) => {
+    try {
+      const raw = String(req.query.ext || '').trim();
+      if (!raw) return res.json({ ok: true, map: {} });
+      const ids = raw.split(',').map(s => s.trim()).filter(Boolean).slice(0, 200);
+      if (!ids.length) return res.json({ ok: true, map: {} });
+      const ph = ids.map(() => '?').join(',');
+      const rows = db.prepare(
+        `SELECT external_userid, name, avatar FROM shijing_wecom_customers WHERE external_userid IN (${ph})`
+      ).all(...ids);
+      const map = {};
+      for (const r of rows) map[r.external_userid] = { name: r.name || '', avatar: r.avatar || '' };
+      res.json({ ok: true, map });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  console.log('[v6-customer-hub] mounted: /api/hub/customers, /api/hub/customer/:ext, /api/hub/stats, /api/hub/cs-mapping, /api/hub/wecom-brief');
 };

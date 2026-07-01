@@ -84,6 +84,26 @@ window.render_store_pending = async function (page) {
   const inv = (DB.invite || []).filter(x => x.storeTeamId === u.teamId && x.status === 'pending')
     .sort((a, b) => (a.arriveTime || '').localeCompare(b.arriveTime || ''));
 
+  // 批量取企微昵称+头像（客服排客时已绑定 external_userid）
+  let wxBrief = {};
+  const extIds = [...new Set(inv.map(x => x.external_userid).filter(Boolean))];
+  if (extIds.length) {
+    try {
+      const br = await api.get('/api/hub/wecom-brief?ext=' + encodeURIComponent(extIds.join(',')));
+      if (br && br.ok) wxBrief = br.map || {};
+    } catch (e) {}
+  }
+  const wxCell = (x) => {
+    const b = x.external_userid ? wxBrief[x.external_userid] : null;
+    const nick = (b && b.name) || x.wechatNickname || '';
+    const avatar = b && b.avatar ? String(b.avatar).replace(/^http:\/\//, 'https://') : '';
+    const fallback = `<div style="width:34px;height:34px;border-radius:50%;background:var(--klein-soft);color:var(--klein);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;flex:none">${esc((nick || '客').slice(0, 1))}</div>`;
+    const av = avatar
+      ? `<img src="${esc(avatar)}" referrerpolicy="no-referrer" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex:none;border:1px solid var(--silver-soft)" onerror="this.outerHTML='${fallback.replace(/'/g, "&#39;")}'"/>`
+      : fallback;
+    return `<div style="display:flex;align-items:center;gap:8px">${av}<span style="font-size:13px">${nick ? esc(nick) : '<span style="color:var(--ink-mute)">—</span>'}</span></div>`;
+  };
+
   // 待补详情：企微链接已确认到店但服务详情未补全（autoCreated + 无照片 或 无操作/成交结果）
   const isComplete = (s) => {
     const hasPhoto = Array.isArray(s.photos) && s.photos.length > 0;
@@ -129,7 +149,7 @@ window.render_store_pending = async function (page) {
       <div class="card">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>预约时间</th><th>客户</th><th>电话</th><th>客服</th><th>备注</th><th style="width:200px">操作</th></tr></thead>
+            <thead><tr><th>预约时间</th><th>客户</th><th>微信</th><th>电话</th><th>客服</th><th>备注</th><th style="width:200px">操作</th></tr></thead>
             <tbody>
               ${inv.map(x => {
                 const cs = (DB.teams && DB.teams[x.csTeamId] && DB.teams[x.csTeamId].name) || x.csTeamId || '-';
@@ -137,6 +157,7 @@ window.render_store_pending = async function (page) {
                 return `<tr ${isToday ? 'style="background:rgba(255,213,79,.08)"' : ''}>
                   <td><b>${(x.arriveTime || '').slice(0, 16).replace('T', ' ')}</b>${isToday ? ' <span class="tag tag-warning">今日</span>' : ''}</td>
                   <td><b>${esc(x.customerName)}</b></td>
+                  <td>${wxCell(x)}</td>
                   <td><a href="tel:${esc(x.phone||'')}" class="muted">${esc(x.phone || '-')}</a></td>
                   <td>${esc(cs)}</td>
                   <td class="muted" style="max-width:160px">${esc(x.remark || '-')}</td>
