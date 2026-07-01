@@ -100,7 +100,10 @@ window.render_store_customers = async function (page) {
         const tags = (c.arriveCount > 1 ? '<span class="sc-tag sc-rep">复购×' + c.arriveCount + '</span>' : '')
           + (c.dealCount > 0 ? '<span class="sc-tag sc-deal">成交</span>' : '');
         return `<div class="sc-row" data-key="${esc(c.key)}">
-          <div><span class="sc-nm">${esc(c.name || '未命名')}</span><span class="sc-ph">${esc(c.phone || '无号')}</span>${tags}</div>
+          <div style="min-width:0;">
+            <div><span class="sc-nm">${esc(c.name || '未命名')}</span><span class="sc-ph">${esc(c.phone || '无号')}</span>${tags}</div>
+            ${c.nickname ? `<div style="font-size:12px;color:#8a9099;margin-top:2px;">💬 ${esc(c.nickname)}</div>` : ''}
+          </div>
           <div class="sc-meta">到店${c.arriveCount} · ¥${(c.ltv || 0).toLocaleString('zh-CN')}</div>
         </div>`;
       }).join('');
@@ -151,7 +154,7 @@ window.render_store_customers = async function (page) {
         <div class="sc-handle"></div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
           <div style="width:44px;height:44px;border-radius:50%;background:#e8f3ff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:17px;color:#3370ff;">${esc((c.name || '?').slice(0, 1))}</div>
-          <div style="flex:1;"><div style="font-weight:600;font-size:16px;">${esc(c.name || '未命名')}</div>
+          <div style="flex:1;min-width:0;"><div style="font-weight:600;font-size:16px;">${esc(c.name || '未命名')}${c.nickname ? `<span style="font-size:12px;font-weight:400;color:#8a9099;margin-left:8px;">💬 ${esc(c.nickname)}</span>` : ''}</div>
             <div style="font-size:13px;color:#646a73;">${esc(c.phone || '无手机号')} · 到店${c.arriveCount}次 · 累计¥${(c.ltv || 0).toLocaleString('zh-CN')}</div></div>
           <button class="btn" id="scClose" style="padding:6px 10px;">关闭</button>
         </div>
