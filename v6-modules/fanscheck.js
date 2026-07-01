@@ -15,16 +15,14 @@ window.render_hq_fanscheck = async function (page) {
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <select id="fcDays" class="fc-input">
-            <option value="7">近 7 天</option>
-            <option value="14">近 14 天</option>
-            <option value="30">近 30 天</option>
-          </select>
+          <div id="fcRange"></div>
+          <button class="btn" id="fcMapBtn">👥 客服映射管理</button>
           <button class="btn btn-primary" id="fcSyncBtn">立即同步企微</button>
         </div>
       </div>
     </div>
 
+    <div id="fcMapPanel" style="margin-top:14px;display:none;"></div>
     <div id="fcTeam" style="margin-top:14px;"></div>
     <div id="fcStaff" style="margin-top:14px;"></div>
 
@@ -43,7 +41,9 @@ window.render_hq_fanscheck = async function (page) {
   `;
 
   const $ = id => document.getElementById(id);
-  $('fcDays').onchange = load;
+  let curRange = window.v6DateRange.compute('7d');
+  window.v6DateRange.mount('fcRange', { preset: '7d', onChange: (r) => { curRange = r; load(); } });
+  $('fcMapBtn').onclick = () => toggleMapPanel();
   $('fcSyncBtn').onclick = async () => {
     const btn = $('fcSyncBtn');
     btn.disabled = true; btn.textContent = '同步中…';
@@ -62,11 +62,10 @@ window.render_hq_fanscheck = async function (page) {
   await load();
 
   async function load() {
-    const days = $('fcDays').value;
     $('fcTeam').innerHTML = '<div class="card"><div class="loading">加载中…</div></div>';
     $('fcStaff').innerHTML = '';
     try {
-      const d = await api.get('/api/wecom/fans-check?days=' + days);
+      const d = await api.get('/api/wecom/fans-check?start=' + curRange.start + '&end=' + curRange.end);
       if (!d.ok) throw new Error(d.error || '加载失败');
       renderTeam(d);
       renderStaff(d);
@@ -121,4 +120,74 @@ window.render_hq_fanscheck = async function (page) {
         </table></div>
       </div>`;
   }
+
+  // ===== 客服映射管理：发现企微成员 + 新增/绑定/停用 =====
+  let mapOpen = false;
+  async function toggleMapPanel() {
+    mapOpen = !mapOpen;
+    const box = $('fcMapPanel');
+    box.style.display = mapOpen ? 'block' : 'none';
+    if (mapOpen) await loadMap();
+  }
+  async function loadMap() {
+    const box = $('fcMapPanel');
+    box.innerHTML = '<div class="card"><div class="loading">正在从企微获取成员列表…</div></div>';
+    try {
+      const [disc, cfgR] = await Promise.all([
+        api.get('/api/wecom/discover'),
+        api.get('/api/config'),
+      ]);
+      if (!disc.ok) throw new Error(disc.error || '获取失败');
+      const teams = (cfgR && cfgR.ok && cfgR.config && cfgR.config.teams) || {};
+      const csTeams = Object.entries(teams).filter(([, v]) => v && v.role === 'cs' && !v.deleted).map(([id, v]) => ({ id, name: v.name }));
+      const teamOpts = (sel) => csTeams.map(t => `<option value="${t.id}" ${t.id === sel ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+      // 排序：未映射的排前面(提醒绑定)，再按近30天加粉降序
+      const members = disc.members.slice().sort((a, b) => (a.mapped === b.mapped ? (b.recentFans - a.recentFans) : (a.mapped ? 1 : -1)));
+      const rows = members.map(m => {
+        const status = m.mapped
+          ? (m.active ? '<span class="tag tag-success">已绑定</span>' : '<span class="tag tag-warning">已停用</span>')
+          : '<span class="tag tag-danger">未绑定 ⚠</span>';
+        const nameInput = `<input class="fc-input" style="width:120px;padding:6px 8px;font-size:13px" id="mp_name_${esc(m.wecomUserid)}" placeholder="客服姓名" value="${esc(m.staffName || '')}">`;
+        const teamSel = `<select class="fc-input" style="width:130px;padding:6px 8px;font-size:13px" id="mp_team_${esc(m.wecomUserid)}">${teamOpts(m.teamId || (csTeams[0] && csTeams[0].id))}</select>`;
+        const bindBtn = `<button class="btn btn-primary" style="height:28px;padding:0 10px;font-size:12px" onclick="fcSaveMap('${esc(m.wecomUserid)}','${esc(m.staffId || '')}')">${m.mapped ? '更新' : '绑定'}</button>`;
+        const toggleBtn = m.mapped
+          ? `<button class="btn" style="height:28px;padding:0 10px;font-size:12px;${m.active ? 'color:var(--danger);border-color:rgba(192,57,43,.3)' : ''}" onclick="fcToggleMap('${esc(m.staffId)}',${m.active ? 0 : 1})">${m.active ? '停用' : '启用'}</button>`
+          : '';
+        return `<tr>
+          <td class="name"><code style="font-size:12px">${esc(m.wecomUserid)}</code></td>
+          <td>${status}</td>
+          <td style="text-align:right">${m.recentFans}</td>
+          <td>${nameInput}</td>
+          <td>${teamSel}</td>
+          <td style="white-space:nowrap">${bindBtn} ${toggleBtn}</td>
+        </tr>`;
+      }).join('');
+      box.innerHTML = `
+        <div class="card">
+          <h3 style="margin-top:0;">👥 客服映射管理 <span class="muted" style="font-size:12px;font-weight:400">（企微成员 ${disc.total} 个，${disc.unmapped} 个未绑定）</span></h3>
+          <div class="muted" style="font-size:13px;margin-bottom:10px">系统自动列出企微里所有「开通了获客助手」的成员。<b style="color:var(--danger)">红色未绑定</b>的（如新客服）填姓名+团队后点「绑定」，即可纳入加粉核对；离职客服点「停用」（数据保留）。绑定后记得点右上「立即同步企微」拉取其历史加粉。</div>
+          <div class="fc-wrap"><table class="fc-tbl">
+            <thead><tr><th style="text-align:left">企微成员ID</th><th>状态</th><th>近30天加粉</th><th>客服姓名</th><th>所属团队</th><th>操作</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="6" class="fc-zero">未获取到企微成员（检查企微通讯录密钥配置）</td></tr>'}</tbody>
+          </table></div>
+        </div>`;
+    } catch (e) {
+      box.innerHTML = '<div class="card"><div style="color:#d83931;">加载失败：' + esc(e.message) + '<br><span class="muted" style="font-size:12px">需企微「客户联系」权限+通讯录密钥，请确认 config.wecom 配置。</span></div></div>';
+    }
+  }
+  // 暴露给行内 onclick
+  window.fcSaveMap = async (wecomUserid, staffId) => {
+    const name = (document.getElementById('mp_name_' + wecomUserid) || {}).value;
+    const teamId = (document.getElementById('mp_team_' + wecomUserid) || {}).value;
+    if (!name || !name.trim()) { alert('请填写客服姓名'); return; }
+    const r = await api.post('/api/wecom/staff-upsert', { id: staffId || undefined, name: name.trim(), teamId, wecomUserid });
+    if (r.ok) { showToast('已保存映射', 'success'); await loadMap(); }
+    else showToast('失败：' + (r.error || ''), 'error');
+  };
+  window.fcToggleMap = async (staffId, active) => {
+    if (!confirm(active ? '启用该客服？' : '停用该客服？停用后不计入加粉核对，历史数据保留，可随时启用。')) return;
+    const r = await api.post('/api/wecom/staff-toggle', { id: staffId, active });
+    if (r.ok) { showToast(active ? '已启用' : '已停用', 'success'); await loadMap(); }
+    else showToast('失败：' + (r.error || ''), 'error');
+  };
 };

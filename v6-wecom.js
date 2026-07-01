@@ -252,9 +252,19 @@ module.exports = function (app, db, deps) {
   // 加粉核对：按客服个人 × 日期返回客观加粉 + 团队自填对比
   app.get('/api/wecom/fans-check', v6Required, (req, res) => {
     try {
-      const days = Math.min(parseInt(req.query.days) || 7, 60);
       const dates = [];
-      for (let i = days - 1; i >= 0; i--) dates.push(fmtLocalDate(new Date(Date.now() - i * 86400000)));
+      const qs = (req.query.start || '').trim(), qe = (req.query.end || '').trim();
+      if (qs && qe) {
+        // 自定义区间（最多 92 天，防爆表）
+        let cur = new Date(qs + 'T00:00:00'), endD = new Date(qe + 'T00:00:00');
+        if (cur > endD) { const t = cur; cur = endD; endD = t; }
+        let guard = 0;
+        while (cur <= endD && guard < 92) { dates.push(fmtLocalDate(cur)); cur = new Date(cur.getTime() + 86400000); guard++; }
+      } else {
+        const days = Math.min(parseInt(req.query.days) || 7, 60);
+        for (let i = days - 1; i >= 0; i--) dates.push(fmtLocalDate(new Date(Date.now() - i * 86400000)));
+      }
+      if (!dates.length) return res.json({ ok: true, dates: [], staff: [], teamCompare: [] });
 
       const staff = db.prepare(`SELECT * FROM shijing_staff WHERE role='cs' AND active=1`).all();
       const cfg = (getConfig && getConfig()) || {};
@@ -311,6 +321,70 @@ module.exports = function (app, db, deps) {
   app.get('/api/wecom/staff', v6Required, (req, res) => {
     const rows = db.prepare(`SELECT * FROM shijing_staff ORDER BY teamId, id`).all();
     res.json({ ok: true, staff: rows });
+  });
+
+  // 发现企微成员：列出所有「配置了客户联系」的成员，标注是否已在 staff 表映射
+  // 用于总部发现新客服(如 DanBanZongJian)并一键绑定
+  app.get('/api/wecom/discover', v6HQRequired, async (req, res) => {
+    try {
+      const followUsers = await getFollowUsers(); // 企微 userid 数组
+      const staffRows = db.prepare(`SELECT * FROM shijing_staff`).all();
+      const mappedSet = new Set(staffRows.map(s => s.wecomUserid).filter(Boolean));
+      // 每个企微成员：是否已映射 + 已映射到谁 + 近30天加粉数(若已同步过)
+      const since = fmtLocalDate(new Date(Date.now() - 30 * 86400000));
+      const fansRows = db.prepare(`SELECT wecomUserid, SUM(addCount) c FROM shijing_wecom_fans WHERE date>=? GROUP BY wecomUserid`).all(since);
+      const fansMap = {}; fansRows.forEach(r => fansMap[r.wecomUserid] = r.c || 0);
+      const members = followUsers.map(uid => {
+        const st = staffRows.find(s => s.wecomUserid === uid);
+        return {
+          wecomUserid: uid,
+          mapped: mappedSet.has(uid),
+          staffId: st ? st.id : null,
+          staffName: st ? st.name : null,
+          teamId: st ? st.teamId : null,
+          active: st ? !!st.active : null,
+          recentFans: fansMap[uid] || 0,
+        };
+      });
+      res.json({ ok: true, members, total: members.length, unmapped: members.filter(m => !m.mapped).length });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message || String(e) });
+    }
+  });
+
+  // 新增/编辑客服映射（HQ）：绑定 企微userid ↔ 客服姓名/团队
+  app.post('/api/wecom/staff-upsert', v6HQRequired, (req, res) => {
+    try {
+      const { id, name, teamId, wecomUserid } = req.body || {};
+      if (!name || !teamId || !wecomUserid) return res.json({ ok: false, error: '姓名/团队/企微号必填' });
+      const staffId = (id || name.trim() || wecomUserid).toString();
+      const now = Date.now();
+      // 同一 wecomUserid 只能绑一个 staff：先清掉别人占用的（避免重复映射）
+      db.prepare(`DELETE FROM shijing_staff WHERE wecomUserid=? AND id<>?`).run(wecomUserid, staffId);
+      const exists = db.prepare(`SELECT id FROM shijing_staff WHERE id=?`).get(staffId);
+      if (exists) {
+        db.prepare(`UPDATE shijing_staff SET name=?, teamId=?, wecomUserid=?, role='cs', active=1, updatedAt=? WHERE id=?`)
+          .run(name.trim(), teamId, wecomUserid, now, staffId);
+      } else {
+        db.prepare(`INSERT INTO shijing_staff(id,name,teamId,role,wecomUserid,active,createdAt,updatedAt)
+          VALUES(?,?,?,'cs',?,1,?,?)`).run(staffId, name.trim(), teamId, wecomUserid, now, now);
+      }
+      res.json({ ok: true, id: staffId });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message || String(e) });
+    }
+  });
+
+  // 停用/启用客服映射（HQ）：离职客服停用，数据保留
+  app.post('/api/wecom/staff-toggle', v6HQRequired, (req, res) => {
+    try {
+      const { id, active } = req.body || {};
+      if (!id) return res.json({ ok: false, error: '缺少 id' });
+      db.prepare(`UPDATE shijing_staff SET active=?, updatedAt=? WHERE id=?`).run(active ? 1 : 0, Date.now(), id);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message || String(e) });
+    }
   });
 
   // ============================================================
@@ -477,5 +551,5 @@ module.exports = function (app, db, deps) {
     }
   });
 
-  console.log('[v6-wecom] mounted: /api/wecom/{sync,fans-check,lost,staff,callback,del-stats,my-lost-rate}');
+  console.log('[v6-wecom] mounted: /api/wecom/{sync,fans-check,lost,staff,discover,staff-upsert,staff-toggle,callback,del-stats,my-lost-rate}');
 };
