@@ -827,7 +827,12 @@ async function runScheduledArrivalPush() {
     const arriveDate = (inv.arriveTime || '').slice(0, 10);
     if (arriveDate !== today) continue;
     if (inv.status !== 'pending') continue;
-    if (inv.notified === true) continue;
+    // 判重（解耦 notified）：
+    //  a) 本日已由 9点批量推过 → scheduledPushedDate === today
+    //  b) 本日已由即时/改约推送推过 → notifiedAt 落在今天
+    // 两者任一成立则跳过，既防止漏推也防止同日重复推。
+    const _notifiedToday = inv.notifiedAt && (new Date(inv.notifiedAt).getFullYear() + '-' + String(new Date(inv.notifiedAt).getMonth()+1).padStart(2,'0') + '-' + String(new Date(inv.notifiedAt).getDate()).padStart(2,'0')) === today;
+    if (inv.scheduledPushedDate === today || _notifiedToday) continue;
 
     const url = storeWebhooks[inv.storeTeamId];
     if (!url) { console.log('[scheduled-push] no webhook for', inv.storeTeamId); continue; }
@@ -856,7 +861,8 @@ async function runScheduledArrivalPush() {
 
     const pr = await pushWecom(url, content);
     const ok = pr.errcode === 0;
-    inv.notified = ok;
+    // 独立标志：仅推送成功才记录当日已推；失败则不打标，下次 cron/自愈可重试。
+    if (ok) { inv.scheduledPushedDate = today; inv.notified = true; }
     inv.scheduledPush = false;
     inv.scheduledPushedAt = Date.now();
     db.prepare(`UPDATE shijing_invite SET data=? WHERE id=?`).run(JSON.stringify(inv), inv.id);
