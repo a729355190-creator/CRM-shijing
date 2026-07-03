@@ -69,6 +69,49 @@ module.exports = function(app, db, { getConfig, setConfig, v6Required, v6HQRequi
   });
 
 
+  // ========== HQ 获取所有门店容量配置列表 ==========
+  /**
+   * GET /api/hq/slot-config-list
+   * 返回所有活跃门店的容量配置 + 今日已排客数(参考)
+   */
+  app.get('/api/hq/slot-config-list', v6HQRequired, async (req, res) => {
+    try {
+      const config = await getConfig();
+      const teams = config.teams || {};
+      const today = new Date();
+      const y = today.getFullYear(), m = String(today.getMonth() + 1).padStart(2, '0'), d = String(today.getDate()).padStart(2, '0');
+      const todayStr = `${y}-${m}-${d}`;
+
+      const stores = Object.entries(teams)
+        .filter(([id, t]) => t.role === 'store' && !t.deleted)
+        .map(([id, t]) => {
+          let todayCount = 0;
+          try {
+            const rows = db.prepare(`SELECT data FROM shijing_invite WHERE storeTeamId=? AND data LIKE ? AND deleted=0`)
+              .all(id, `%"arriveTime":"${todayStr}%`);
+            todayCount = rows.filter(r => {
+              try { const dd = JSON.parse(r.data); return dd.status !== 'cancelled'; } catch { return false; }
+            }).length;
+          } catch (e) {}
+          const sc = t.slotConfig || { newCustomerMinutes: 60, oldCustomerMinutes: 30 };
+          return {
+            teamId: id,
+            name: t.name || id,
+            city: t.city || '',
+            maxPerSlot: t.maxPerSlot || 1,
+            newCustomerMinutes: sc.newCustomerMinutes || 60,
+            oldCustomerMinutes: sc.oldCustomerMinutes || 30,
+            todayCount,
+          };
+        });
+
+      res.json({ ok: true, stores, today: todayStr });
+    } catch (e) {
+      console.error('[/api/hq/slot-config-list] error:', e.message);
+      res.json({ ok: false, error: e.message });
+    }
+  });
+
   // ========== HQ配置门店容量接口 ==========
 
   /**

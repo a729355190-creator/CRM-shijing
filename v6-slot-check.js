@@ -83,9 +83,10 @@ function checkSlotCapacity(db, config, storeTeamId, arriveTime, customerType) {
   const newEnd = newStart + newDuration;
 
   // 4. 查询同一天该门店所有有效预约
+  // 注意：storeTeamId 存在 data(JSON) 里，不是独立列，必须用 json_extract 查询
   const invites = db.prepare(`
     SELECT data FROM shijing_invite
-    WHERE storeTeamId = ?
+    WHERE json_extract(data, '$.storeTeamId') = ?
       AND data LIKE ?
       AND deleted = 0
   `).all(storeTeamId, `%"arriveTime":"${dateStr}%`);
@@ -98,10 +99,11 @@ function checkSlotCapacity(db, config, storeTeamId, arriveTime, customerType) {
       if (data.status === 'cancelled') continue;  // 排除已取消
 
       const invStart = parseTimeToMinutes(data.arriveTime);
-      const invType = data.customerType || 'new';  // 默认新客
-      const invDuration = invType === 'new'
-        ? slotConfig.newCustomerMinutes
-        : slotConfig.oldCustomerMinutes;
+      // 老客(old/老客)按老客时长，其余(含空值)按新客时长
+      const invIsOld = (data.customerType === 'old' || data.customerType === '老客');
+      const invDuration = invIsOld
+        ? slotConfig.oldCustomerMinutes
+        : slotConfig.newCustomerMinutes;
       const invEnd = invStart + invDuration;
       intervals.push([invStart, invEnd]);
     } catch (e) {
@@ -186,10 +188,10 @@ function generateRecommendations(db, config, storeTeamId, arriveTime, customerTy
  * 用于生成推荐时段时校验已有预约
  */
 function checkSlotCapacityWithoutNew(db, config, storeTeamId, slot, duration, dateStr, slotConfig) {
-  // 查询该天已有预约
+  // 查询该天已有预约（storeTeamId 在 JSON data 里，用 json_extract）
   const invites = db.prepare(`
     SELECT data FROM shijing_invite
-    WHERE storeTeamId = ?
+    WHERE json_extract(data, '$.storeTeamId') = ?
       AND data LIKE ?
       AND deleted = 0
   `).all(storeTeamId, `%"arriveTime":"${dateStr}%`);
@@ -201,8 +203,8 @@ function checkSlotCapacityWithoutNew(db, config, storeTeamId, slot, duration, da
       if (data.status === 'cancelled') continue;
 
       const invStart = parseTimeToMinutes(data.arriveTime);
-      const invType = data.customerType || 'new';
-      const invDuration = invType === 'new' ? slotConfig.newCustomerMinutes : slotConfig.oldCustomerMinutes;
+      const invIsOld = (data.customerType === 'old' || data.customerType === '老客');
+      const invDuration = invIsOld ? slotConfig.oldCustomerMinutes : slotConfig.newCustomerMinutes;
       intervals.push([invStart, invStart + invDuration]);
     } catch (e) {}
   }
