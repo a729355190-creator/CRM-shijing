@@ -948,6 +948,164 @@ window.render_cs_scripts = async function(page) {
   }
 };
 
-window.render_cs_materials = function(page) {
-  page.innerHTML = `<div class="card"><h2>◐ 素材推送</h2><p class="muted">向客户推送的图片/视频素材库（建设中）</p></div>`;
+window.render_cs_materials = async function(page) {
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+  function fmtSize(n){ n=Number(n)||0; if(n<1024)return n+'B'; if(n<1048576)return (n/1024).toFixed(0)+'KB'; return (n/1048576).toFixed(1)+'MB'; }
+  function copyToClip(text, btn){
+    const done=()=>{ if(!btn)return; const old=btn.innerHTML; btn.innerHTML='✓ 已复制'; btn.style.background='var(--success,#22c55e)'; setTimeout(()=>{btn.innerHTML=old; btn.style.background='';},1600); };
+    const fallback=()=>{ const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');}catch(e){} document.body.removeChild(ta); done(); };
+    if(navigator.clipboard && window.isSecureContext){ navigator.clipboard.writeText(text).then(done).catch(fallback); } else { fallback(); }
+  }
+
+  page.innerHTML = '<div class="loading">加载素材库…</div>';
+  let items = [];
+  try {
+    const r = await api.get('/api/v6/uploads');
+    if (!r || !r.ok) throw new Error((r && r.error) || '加载失败');
+    items = r.items || [];
+  } catch (e) {
+    page.innerHTML = '<div class="card"><h2>★ 素材库</h2><p class="muted">加载失败：'+esc(e.message)+'</p></div>';
+    return;
+  }
+
+  // 分类聚合
+  const cats = {};
+  items.forEach(it => { const c = it.category || '未分类'; (cats[c] = cats[c] || []).push(it); });
+  const catNames = Object.keys(cats).sort((a,b)=>cats[b].length-cats[a].length);
+  let activeCat = window.__matActiveCat && cats[window.__matActiveCat] ? window.__matActiveCat : (catNames[0] || '');
+
+  const origin = window.location.origin;
+
+  function draw(){
+    const list = activeCat ? (cats[activeCat] || []) : items;
+    const tabs = ['<button class="mat-tab'+(activeCat===''?' on':'')+'" data-cat="">全部 '+items.length+'</button>']
+      .concat(catNames.map(c => '<button class="mat-tab'+(c===activeCat?' on':'')+'" data-cat="'+esc(c)+'">'+esc(c)+' '+cats[c].length+'</button>')).join('');
+
+    const grid = list.map(it => {
+      const isText = it.kind === 'text';
+      const isVideo = it.kind === 'video';
+      const fullUrl = it.url ? (origin + it.url) : '';
+      if (isText) {
+        return '<div class="mat-card">'
+          + '<div class="mat-badge txt">文案</div>'
+          + '<div class="mat-title">'+esc(it.title)+'</div>'
+          + '<div class="mat-text">'+esc(it.content)+'</div>'
+          + '<div class="mat-actions"><button class="btn btn-primary mat-copy" data-copy="'+esc(it.content).replace(/"/g,'&quot;')+'">复制文案</button></div>'
+          + '</div>';
+      }
+      const media = isVideo
+        ? '<video class="mat-media" src="'+esc(it.url)+'" preload="metadata" muted playsinline></video><div class="mat-play">▶</div>'
+        : '<img class="mat-media" loading="lazy" src="'+esc(it.thumbUrl || it.url)+'" alt="">';
+      return '<div class="mat-card">'
+        + '<div class="mat-badge '+(isVideo?'vid':'img')+'">'+(isVideo?'视频':'图片')+'</div>'
+        + '<a class="mat-thumb" href="'+esc(it.url)+'" target="_blank" rel="noopener">'+media+'</a>'
+        + '<div class="mat-title" title="'+esc(it.title)+'">'+esc(it.title)+'</div>'
+        + '<div class="mat-meta">'+fmtSize(it.fileSize)+'</div>'
+        + '<div class="mat-actions">'
+        +   '<a class="btn mat-dl" href="'+esc(it.url)+'" download target="_blank" rel="noopener">下载</a>'
+        +   '<button class="btn mat-copy" data-copy="'+esc(fullUrl)+'">复制链接</button>'
+        + '</div>'
+        + '</div>';
+    }).join('') || '<div class="muted" style="padding:24px;text-align:center">该分类暂无素材</div>';
+
+    page.innerHTML =
+      '<style>'
+      + '.mat-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}'
+      + '.mat-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px}'
+      + '.mat-tab{border:1px solid var(--line,#e5e7eb);background:var(--card,#fff);color:var(--ink,#111);padding:6px 12px;border-radius:999px;font-size:13px;cursor:pointer}'
+      + '.mat-tab.on{background:var(--klein,#0050ff);color:#fff;border-color:var(--klein,#0050ff)}'
+      + '.mat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:12px}'
+      + '.mat-card{border:1px solid var(--line,#e5e7eb);border-radius:12px;overflow:hidden;background:var(--card,#fff);display:flex;flex-direction:column;position:relative}'
+      + '.mat-badge{position:absolute;top:8px;left:8px;z-index:2;font-size:11px;padding:2px 8px;border-radius:999px;color:#fff}'
+      + '.mat-badge.img{background:#0050ff}.mat-badge.vid{background:#7c3aed}.mat-badge.txt{background:#059669}'
+      + '.mat-thumb{display:block;position:relative;aspect-ratio:1/1;background:#f3f4f6;overflow:hidden}'
+      + '.mat-media{width:100%;height:100%;object-fit:cover;display:block}'
+      + '.mat-play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:34px;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.6);pointer-events:none}'
+      + '.mat-title{font-size:13px;font-weight:600;padding:8px 10px 2px;color:var(--ink,#111);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+      + '.mat-text{font-size:12px;color:var(--ink,#374151);padding:2px 10px 8px;white-space:pre-wrap;max-height:120px;overflow:auto;line-height:1.5}'
+      + '.mat-meta{font-size:11px;color:var(--muted,#9ca3af);padding:0 10px 6px}'
+      + '.mat-actions{display:flex;gap:6px;padding:8px 10px;margin-top:auto}'
+      + '.mat-actions .btn{flex:1;font-size:12px;padding:6px 4px;text-align:center;border-radius:8px}'
+      + '</style>'
+      + '<div class="card">'
+      +   '<div class="mat-head"><h2 style="margin:0;flex:1">★ 素材库</h2>'
+      +     '<button class="btn btn-primary" id="matUploadBtn">＋ 上传素材</button></div>'
+      +   '<p class="muted" style="margin:4px 0 0">发给客户的图片 / 视频 / 文案，点卡片可放大预览，一键复制或下载。</p>'
+      +   '<div class="mat-tabs">'+tabs+'</div>'
+      +   '<div class="mat-grid">'+grid+'</div>'
+      + '</div>';
+
+    page.querySelectorAll('.mat-tab').forEach(b => b.addEventListener('click', () => { activeCat = b.dataset.cat; window.__matActiveCat = activeCat; draw(); }));
+    page.querySelectorAll('.mat-copy').forEach(b => b.addEventListener('click', () => copyToClip(b.dataset.copy, b)));
+    const ub = page.querySelector('#matUploadBtn'); if (ub) ub.addEventListener('click', openUpload);
+  }
+
+  function openUpload(){
+    const existingCats = catNames.slice();
+    const mask = document.createElement('div');
+    mask.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    mask.innerHTML =
+      '<div style="background:var(--card,#fff);border-radius:14px;max-width:440px;width:100%;padding:20px;max-height:90vh;overflow:auto">'
+      + '<div style="display:flex;align-items:center;margin-bottom:12px"><h3 style="margin:0;flex:1">上传素材</h3><button id="matClose" class="btn" style="padding:4px 10px">✕</button></div>'
+      + '<label style="font-size:13px;font-weight:600">分类</label>'
+      + '<input id="matCat" list="matCatList" placeholder="如：效果对比 / 朋友圈素材" style="width:100%;padding:9px;margin:6px 0 12px;border:1px solid var(--line,#e5e7eb);border-radius:8px;font-size:15px">'
+      + '<datalist id="matCatList">'+existingCats.map(c=>'<option value="'+esc(c)+'">').join('')+'</datalist>'
+      + '<div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn mat-mode on" data-mode="file" style="flex:1">图片/视频</button><button class="btn mat-mode" data-mode="text" style="flex:1">文案</button></div>'
+      + '<div id="matFileZone"><label style="font-size:13px;font-weight:600">选择文件（可多选）</label>'
+      +   '<input id="matFiles" type="file" accept="image/*,video/*" multiple style="width:100%;margin:6px 0 4px">'
+      +   '<div class="muted" style="font-size:11px">单个文件 ≤100MB，图片自动生成缩略图</div></div>'
+      + '<div id="matTextZone" style="display:none">'
+      +   '<label style="font-size:13px;font-weight:600">标题</label><input id="matTitle" placeholder="话术标题" style="width:100%;padding:9px;margin:6px 0 10px;border:1px solid var(--line,#e5e7eb);border-radius:8px;font-size:15px">'
+      +   '<label style="font-size:13px;font-weight:600">文案内容</label><textarea id="matContent" rows="5" placeholder="要发给客户的文案…" style="width:100%;padding:9px;margin:6px 0;border:1px solid var(--line,#e5e7eb);border-radius:8px;font-size:15px"></textarea></div>'
+      + '<div id="matMsg" class="muted" style="font-size:12px;min-height:18px;margin:6px 0"></div>'
+      + '<button id="matSubmit" class="btn btn-primary" style="width:100%;padding:11px;font-size:15px">上传</button>'
+      + '</div>';
+    document.body.appendChild(mask);
+    let mode = 'file';
+    const close = () => document.body.removeChild(mask);
+    mask.addEventListener('click', e => { if (e.target === mask) close(); });
+    mask.querySelector('#matClose').addEventListener('click', close);
+    mask.querySelectorAll('.mat-mode').forEach(b => b.addEventListener('click', () => {
+      mode = b.dataset.mode;
+      mask.querySelectorAll('.mat-mode').forEach(x => x.classList.toggle('on', x===b));
+      mask.querySelectorAll('.mat-mode').forEach(x => { x.style.background = x.classList.contains('on') ? 'var(--klein,#0050ff)' : ''; x.style.color = x.classList.contains('on') ? '#fff' : ''; });
+      mask.querySelector('#matFileZone').style.display = mode==='file' ? '' : 'none';
+      mask.querySelector('#matTextZone').style.display = mode==='text' ? '' : 'none';
+    }));
+    // init mode button style
+    mask.querySelector('.mat-mode.on').style.background='var(--klein,#0050ff)';
+    mask.querySelector('.mat-mode.on').style.color='#fff';
+    const msg = mask.querySelector('#matMsg');
+    mask.querySelector('#matSubmit').addEventListener('click', async () => {
+      const cat = (mask.querySelector('#matCat').value || '').trim();
+      if (!cat) { msg.style.color='var(--danger,#ef4444)'; msg.textContent='请填写分类'; return; }
+      const submitBtn = mask.querySelector('#matSubmit'); submitBtn.disabled = true; submitBtn.textContent = '上传中…';
+      msg.style.color='var(--muted)'; msg.textContent='正在上传…';
+      try {
+        if (mode === 'text') {
+          const title = (mask.querySelector('#matTitle').value||'').trim();
+          const content = (mask.querySelector('#matContent').value||'').trim();
+          if (!title || !content) { msg.style.color='var(--danger,#ef4444)'; msg.textContent='标题和内容都要填'; submitBtn.disabled=false; submitBtn.textContent='上传'; return; }
+          const r = await api.post('/api/v6/uploads/text', { category: cat, title, content });
+          if (!r || !r.ok) throw new Error((r&&r.error)||'失败');
+        } else {
+          const files = mask.querySelector('#matFiles').files;
+          if (!files || !files.length) { msg.style.color='var(--danger,#ef4444)'; msg.textContent='请选择文件'; submitBtn.disabled=false; submitBtn.textContent='上传'; return; }
+          const fd = new FormData();
+          fd.append('category', cat);
+          for (const f of files) fd.append('files', f);
+          const resp = await fetch('/api/v6/uploads/files', { method:'POST', body: fd, credentials:'same-origin' });
+          const r = await resp.json();
+          if (!r || !r.ok) throw new Error((r&&r.error)||'失败');
+        }
+        msg.style.color='var(--success,#22c55e)'; msg.textContent='✓ 上传成功，正在刷新…';
+        setTimeout(() => { close(); window.render_cs_materials(page); }, 800);
+      } catch (e) {
+        msg.style.color='var(--danger,#ef4444)'; msg.textContent='✗ '+e.message;
+        submitBtn.disabled=false; submitBtn.textContent='上传';
+      }
+    });
+  }
+
+  draw();
 };
