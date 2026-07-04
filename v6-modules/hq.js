@@ -1001,25 +1001,86 @@ window.hqToggleUserStatus = async function (id, name, action) {
   if (j.ok) { showToast(disable ? '已停用' : '已启用', 'success'); render_hq_users(document.getElementById('page')); }
   else showToast('失败：' + (j.error || ''), 'error');
 };
-window.openCreateUserDialog = function () {
-  const username = prompt('用户名（英文，如 zhangsan）：');
-  if (!username) return;
-  const realName = prompt('真实姓名：');
-  if (!realName) return;
-  const role = prompt('角色 (hq/ad/cs/store)：', 'cs');
-  if (!role) return;
-  const teamId = prompt('所属团队 ID（如 cs_1, store_1）：');
-  if (!teamId) return;
-  const password = prompt('初始密码（≥6 位）：');
-  if (!password || password.length < 6) return;
-  fetch('/api/v6/users', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, realName, role, teamId, password, position: '' }),
-  }).then(r => r.json()).then(j => {
-    alert(j.ok ? '创建成功 ✓' : '失败：' + (j.error || ''));
-    if (j.ok) render_hq_users(document.getElementById('page'));
-  });
+window.openCreateUserDialog = async function () {
+  await loadAllData();
+  const esc = (x) => (x == null ? '' : String(x)).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const ROLE_LABEL = { hq: '总部', ad: '投放', cs: '客服', store: '门店' };
+  const buildTeamOpts = (role) => {
+    if (role === 'hq') return '<option value="">（总部无需团队）</option>';
+    const list = (typeof teamsByRoleAll === 'function' ? teamsByRoleAll(role) : [])
+      .filter(t => !t.deleted);
+    if (!list.length) return `<option value="">（暂无${ROLE_LABEL[role]}团队，请先在部门管理创建）</option>`;
+    return list.map(t => `<option value="${esc(t.id)}">${esc(t.name)}（${esc(t.id)}）</option>`).join('');
+  };
+  const old = document.getElementById('createUserOverlay');
+  if (old) old.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'createUserOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(20,28,56,.4);z-index:1200;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:460px;padding:22px 24px;box-shadow:0 12px 40px rgba(0,0,0,.18)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-size:17px;font-weight:600">➕ 新增用户</div>
+        <span id="cuClose" style="cursor:pointer;font-size:20px;color:#8a9099;line-height:1">×</span>
+      </div>
+      <div style="display:grid;gap:13px">
+        <div><label class="lbl">用户名（英文登录名）</label><input class="input" id="cu_username" placeholder="如 zhangsan" autocomplete="off"/></div>
+        <div><label class="lbl">真实姓名</label><input class="input" id="cu_realname" placeholder="如 张三"/></div>
+        <div><label class="lbl">角色</label>
+          <select class="select" id="cu_role">
+            <option value="cs">客服</option>
+            <option value="store">门店</option>
+            <option value="ad">投放</option>
+            <option value="hq">总部</option>
+          </select>
+        </div>
+        <div id="cu_team_wrap"><label class="lbl">所属团队</label>
+          <select class="select" id="cu_team">${buildTeamOpts('cs')}</select>
+        </div>
+        <div><label class="lbl">初始密码（≥6 位）</label><input class="input" id="cu_password" type="text" placeholder="如 sj8888"/></div>
+      </div>
+      <div id="cuMsg" style="margin-top:10px;font-size:13px;color:#e23b3b;min-height:16px"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
+        <button class="btn" id="cuCancel">取消</button>
+        <button class="btn btn-primary" id="cuSubmit">创建</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const $ = (id) => overlay.querySelector('#' + id);
+  const close = () => overlay.remove();
+  $('cuClose').onclick = close; $('cuCancel').onclick = close;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  // 角色切换 → 团队下拉联动
+  const roleSel = $('cu_role'), teamWrap = $('cu_team_wrap'), teamSel = $('cu_team');
+  roleSel.onchange = () => {
+    const rl = roleSel.value;
+    teamSel.innerHTML = buildTeamOpts(rl);
+    teamWrap.style.display = rl === 'hq' ? 'none' : '';
+  };
+  $('cuSubmit').onclick = async () => {
+    const msg = $('cuMsg'); msg.textContent = '';
+    const username = $('cu_username').value.trim();
+    const realName = $('cu_realname').value.trim();
+    const role = roleSel.value;
+    const teamId = role === 'hq' ? '' : teamSel.value;
+    const password = $('cu_password').value;
+    if (!username) return msg.textContent = '请填写用户名';
+    if (!realName) return msg.textContent = '请填写真实姓名';
+    if (role !== 'hq' && !teamId) return msg.textContent = '请选择所属团队（如无可选，请先到部门管理创建团队）';
+    if (!password || password.length < 6) return msg.textContent = '密码至少 6 位';
+    $('cuSubmit').disabled = true; $('cuSubmit').textContent = '创建中…';
+    try {
+      const r = await fetch('/api/v6/users', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, realName, role, teamId, password, position: '' }),
+      });
+      const j = await r.json();
+      if (j.ok) { showToast('创建成功 ✓', 'success'); close(); render_hq_users(document.getElementById('page')); }
+      else { msg.textContent = '失败：' + (j.error || ''); $('cuSubmit').disabled = false; $('cuSubmit').textContent = '创建'; }
+    } catch (e) {
+      msg.textContent = '网络错误：' + e.message; $('cuSubmit').disabled = false; $('cuSubmit').textContent = '创建';
+    }
+  };
 };
 
 // ============== 系统设置（含部门管理）==============
