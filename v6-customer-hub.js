@@ -17,6 +17,40 @@ module.exports = function (app, db, deps) {
     } catch { return {}; }
   }
 
+  // ---- 从企微实时发现「客服部」成员（部门 4=客服部 / 12=客服1部）----
+  // 用于「企微号绑定」下拉：新客服加入企微客服部后，这里自动能拿到，无需重导客户
+  const CS_DEPT_IDS = [4, 12];
+  let _csMemCache = { at: 0, list: null };
+  const _wecomHttpGet = (path) => new Promise((rs, rj) => {
+    require('https').get('https://qyapi.weixin.qq.com' + path, r => {
+      let d = ''; r.on('data', c => d += c); r.on('end', () => { try { rs(JSON.parse(d)); } catch (e) { rj(e); } });
+    }).on('error', rj);
+  });
+  async function getCsWecomMembers() {
+    // 60s 缓存，避免频繁进页打爆企微接口
+    if (_csMemCache.list && Date.now() - _csMemCache.at < 60000) return _csMemCache.list;
+    const cfg = (getConfig && getConfig()) || {};
+    const w = cfg.wecom || {};
+    if (!w.corpId || !w.contactSecret) throw new Error('wecom not configured');
+    const tk = await _wecomHttpGet('/cgi-bin/gettoken?corpid=' + w.corpId + '&corpsecret=' + w.contactSecret);
+    if (!tk.access_token) throw new Error('gettoken failed');
+    const fr = await _wecomHttpGet('/cgi-bin/externalcontact/get_follow_user_list?access_token=' + tk.access_token);
+    const follow = fr.follow_user || [];
+    const out = [];
+    for (const uid of follow) {
+      try {
+        const u = await _wecomHttpGet('/cgi-bin/user/get?access_token=' + tk.access_token + '&userid=' + encodeURIComponent(uid));
+        if (u.errcode !== 0) continue;
+        const depts = Array.isArray(u.department) ? u.department : [];
+        if (depts.some(d => CS_DEPT_IDS.includes(Number(d)))) {
+          out.push({ wecomUserid: uid, name: u.name || uid });
+        }
+      } catch (e) { /* 单个成员失败跳过 */ }
+    }
+    _csMemCache = { at: Date.now(), list: out };
+    return out;
+  }
+
   // ---- 取某客服 wecomUserid（用于"只看自己名下好友"）----
   // 匹配优先级：username(最稳定) > realName > id，任一命中即可
   // 注：登录账号 username 与 staff.id 常一致(如 zhouxiaoyu)，realName 与 staff.name 一致(如 WP-ZXY)
@@ -161,7 +195,7 @@ module.exports = function (app, db, deps) {
 
   // ============ 4. 客服企微映射管理（仅总部）============
   // 列出所有客服账号 + 当前企微映射 + 可分配的企微号清单
-  app.get('/api/hub/cs-mapping', v6HQRequired, (req, res) => {
+  app.get('/api/hub/cs-mapping', v6HQRequired, async (req, res) => {
     try {
       // 所有 cs 角色登录用户
       const users = db.prepare('SELECT id, data FROM shijing_users').all()
@@ -176,9 +210,19 @@ module.exports = function (app, db, deps) {
           wecomUserid: s ? s.wecomUserid : null, staffId: s ? s.id : null,
         };
       });
-      // 企微号清单(带客户数)
-      const wecomList = db.prepare(`SELECT follow_userid AS wecomUserid, COUNT(*) AS customerCount
+      // 企微号清单：优先「实时企微客服部成员」（含新客服），带库里客户数；企微失败则降级为客户表 GROUP BY
+      const custCntRows = db.prepare(`SELECT follow_userid AS wecomUserid, COUNT(*) AS customerCount
         FROM shijing_wecom_customers WHERE follow_userid IS NOT NULL AND follow_userid <> '' GROUP BY follow_userid`).all();
+      const custCntMap = {}; custCntRows.forEach(r => { custCntMap[r.wecomUserid] = r.customerCount; });
+      let wecomList;
+      try {
+        const members = await getCsWecomMembers();
+        wecomList = members.map(m => ({ wecomUserid: m.wecomUserid, name: m.name, customerCount: custCntMap[m.wecomUserid] || 0 }));
+        // 兜底：库里有客户但已不在客服部名单里的，也保留（避免历史绑定丢失）
+        custCntRows.forEach(r => { if (!members.find(m => m.wecomUserid === r.wecomUserid)) wecomList.push({ wecomUserid: r.wecomUserid, name: r.wecomUserid, customerCount: r.customerCount }); });
+      } catch (e) {
+        wecomList = custCntRows.map(r => ({ wecomUserid: r.wecomUserid, name: r.wecomUserid, customerCount: r.customerCount }));
+      }
       res.json({ ok: true, mappings: rows, wecomList });
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message });

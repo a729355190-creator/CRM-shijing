@@ -343,7 +343,7 @@
     const d = await hubApi('cs-mapping');
     if (!d.ok) { page.innerHTML = `<div class="card"><div class="muted">加载失败：${esc(d.error)}</div></div>`; return; }
     const wecomOpts = `<option value="">未配置</option>` + d.wecomList.map(w =>
-      `<option value="${esc(w.wecomUserid)}">${esc(w.wecomUserid)}（${w.customerCount}客户）</option>`).join('');
+      `<option value="${esc(w.wecomUserid)}">${esc(w.name||w.wecomUserid)} · ${esc(w.wecomUserid)}（${w.customerCount}客户）</option>`).join('');
     page.innerHTML = `
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
