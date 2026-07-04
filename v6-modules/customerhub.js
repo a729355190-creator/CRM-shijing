@@ -19,7 +19,8 @@
   };
 
   async function hubApi(path) {
-    const r = await fetch('/api/hub/' + path, { credentials: 'same-origin' });
+    const sep = path.indexOf('?') >= 0 ? '&' : '?';
+    const r = await fetch('/api/hub/' + path + sep + '_t=' + Date.now(), { credentials: 'same-origin', cache: 'no-store' });
     return r.json();
   }
   function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -345,7 +346,10 @@
       `<option value="${esc(w.wecomUserid)}">${esc(w.wecomUserid)}（${w.customerCount}客户）</option>`).join('');
     page.innerHTML = `
       <div class="card">
-        <div style="font-size:15px;font-weight:500;margin-bottom:6px;">客服企微绑定</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <div style="font-size:15px;font-weight:500;">客服企微绑定</div>
+          <span id="csmapRefresh" class="hub-pgbtn" style="padding:6px 14px;">🔄 刷新客服列表</span>
+        </div>
         <div class="muted" style="font-size:12px;color:#8a9099;margin-bottom:14px;">
           绑定后，该客服登录"客户中心"只能看到自己名下的企微好友。一个企微号只应绑一位客服。</div>
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -368,6 +372,8 @@
       <style>.hub-input{padding:9px 12px;border:1px solid #d9dde3;border-radius:8px;background:#fff;}
         .hub-pgbtn{display:inline-block;border:1px solid #d9dde3;border-radius:8px;cursor:pointer;font-size:13px;background:#fff;}
         .hub-pgbtn:hover{background:#f7f8fa;}</style>`;
+    const _rf = page.querySelector('#csmapRefresh');
+    if (_rf) _rf.onclick = () => renderCsMapping(page);
     page.querySelectorAll('.csmap-save').forEach(btn => {
       btn.onclick = async () => {
         const sel = page.querySelectorAll('select.hub-input')[+btn.dataset.i];
