@@ -218,10 +218,14 @@ module.exports = function installOceanengineLocal(app, db, opts) {
     if (!tok.ok) return { ok: false, error: tok.error };
     const cfg = getConfig() || {};
     let accounts = (cfg.oceanengine && cfg.oceanengine.localAccounts) || [];
-    if (!accounts.length) {
-      const r = await syncLocalAccountList();
-      if (!r.ok) return { ok: false, error: r.error };
-      accounts = r.accounts;
+    // 每次同步前都先刷新一遍账户列表（而非仅在缓存为空时才刷新），
+    // 这样以后新开通的本地推账户会被自动纳入同步范围，不需要人工手动点"刷新账户"。
+    // 刷新失败（如接口临时报错）时降级使用上次缓存的账户列表，保证当天同步不中断。
+    const refreshed = await syncLocalAccountList();
+    if (refreshed.ok) {
+      accounts = refreshed.accounts;
+    } else if (!accounts.length) {
+      return { ok: false, error: refreshed.error };
     }
     const summary = { startDate, endDate, accounts: accounts.length, written: 0, updated: 0, errors: [] };
     for (const acc of accounts) {
