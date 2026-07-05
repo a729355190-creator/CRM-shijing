@@ -421,7 +421,7 @@ app.post('/api/update', v6Required, (req, res) => {
     }
 
     // === Hook: 客服修改排客（reNotify 且仍 pending）→ 通知门店群更新接待信息 ===
-    if (col === 'invite' && data && data.reNotify === true && merged.status === 'pending' && merged.storeTeamId) {
+    if (col === 'invite' && data && data.reNotify === true && merged.status === 'pending' && merged.storeTeamId && !isStoreRepurchase(merged)) { // 门店复购邀约不推送改约通知
       try {
         const cfgX = getConfig() || {};
         const teamsX = (cfgX.teams) || {};
@@ -509,6 +509,15 @@ app.post('/api/wecom-push-hq', v6Required, async (req, res) => {
   res.json({ ok: r.errcode === 0, result: r });
 });
 
+
+// ===== 门店复购邀约判定：门店在客户中心自己发起的"再次邀约/老客复购"不推送到店通知 =====
+function isStoreRepurchase(inv) {
+  if (!inv) return false;
+  if (inv.source === '客户中心-再次邀约') return true;
+  if (typeof inv.id === 'string' && inv.id.indexOf('reinv_') === 0) return true;
+  return false;
+}
+
 // 即时到店推送（带一键反馈蓝链）
 app.post('/api/wecom-push-arrival', async (req, res) => {
   const { inviteId } = req.body || {};
@@ -516,6 +525,9 @@ app.post('/api/wecom-push-arrival', async (req, res) => {
   const row = db.prepare(`SELECT data FROM shijing_invite WHERE id=? AND deleted=0`).get(inviteId);
   if (!row) return res.json({ ok: false, error: 'invite not found' });
   const inv = JSON.parse(row.data);
+  if (isStoreRepurchase(inv)) { // [即时] 门店复购邀约不推送到店通知
+    return res.json({ ok: false, skipped: true, reason: 'store-repurchase' });
+  }
 
   // 生成或复用 confirmTokens
   if (!inv.confirmTokens) {
@@ -827,6 +839,7 @@ async function runScheduledArrivalPush() {
     const arriveDate = (inv.arriveTime || '').slice(0, 10);
     if (arriveDate !== today) continue;
     if (inv.status !== 'pending') continue;
+    if (isStoreRepurchase(inv)) continue; // [批量] 门店复购邀约不推送
     // 判重（解耦 notified）：
     //  a) 本日已由 9点批量推过 → scheduledPushedDate === today
     //  b) 本日已由即时/改约推送推过 → notifiedAt 落在今天
