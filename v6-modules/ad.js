@@ -58,7 +58,7 @@ window.render_ad_overview = async function(page) {
     <div class="card">
       <h3>📅 近 7 天每日明细</h3>
       <div class="table-wrap"><table>
-        <thead><tr><th>日期</th><th style="text-align:right">消耗</th><th style="text-align:right">加粉</th><th style="text-align:right">加粉成本</th><th style="text-align:right">${deepLabel}</th><th style="text-align:right">${deepLabel}成本</th></tr></thead>
+        <thead><tr><th>日期</th><th style="text-align:right">消耗</th><th style="text-align:right">加粉</th><th style="text-align:right">加粉成本</th><th style="text-align:right">高潜</th><th style="text-align:right">高潜成本</th></tr></thead>
         <tbody>
           ${dayRows.map(d => `<tr>
             <td>${d.date}</td>
@@ -571,11 +571,23 @@ window.render_ad_report = async function(page) {
 
   // ===== 账户维度（同步渲染）=====
   {
+    // 渠道来源标注：mediaChannel -> {label, badge}
+    const CH_META = {
+      oceanengine:        { label: '巨量 AD',  color: '#1677ff', bg: '#e8f2ff' },
+      oceanengine_legacy:  { label: '巨量历史', color: '#8c8c8c', bg: '#f0f0f0' },
+      oceanengine_local:  { label: '本地推',   color: '#fa8c16', bg: '#fff3e6' },
+      adq:                { label: '腾讯 ADQ', color: '#07c160', bg: '#e6f9ee' },
+      manual:             { label: '手动录入', color: '#8c8c8c', bg: '#f0f0f0' },
+    };
+    const chMeta = ch => CH_META[ch] || { label: ch || '未知', color: '#8c8c8c', bg: '#f0f0f0' };
+
     const ad = (DB.ad || []).filter(x => !x.cityName && x.date >= start && x.date <= end);
     const byAccount = {};
     ad.forEach(x => {
-      const k = x.ocAccountName || x.ocAccountId || x.teamId;
-      if (!byAccount[k]) byAccount[k] = { name: k, cost: 0, addFans: 0, deepConvert: 0 };
+      const ch = x.mediaChannel || 'manual';
+      const name = x.ocAccountName || x.ocAccountId || x.teamId;
+      const k = ch + '__' + name;
+      if (!byAccount[k]) byAccount[k] = { name, channel: ch, cost: 0, addFans: 0, deepConvert: 0 };
       byAccount[k].cost += +x.cost || 0;
       byAccount[k].addFans += +x.addFans || 0;
       byAccount[k].deepConvert += +x.deepConvert || 0;
@@ -588,8 +600,11 @@ window.render_ad_report = async function(page) {
       <div class="card">
         <h3>📊 按账户维度（${accList.length} 个 · 总消耗 ${fmtMoney(totCost)} · 加粉 ${totFans} · 高潜 ${totDeep}）</h3>
         <div class="table-wrap"><table>
-          <thead><tr><th>账户</th><th style="text-align:right">消耗</th><th style="text-align:right">占比</th><th style="text-align:right">加粉</th><th style="text-align:right">加粉成本</th><th style="text-align:right">高潜成交</th><th style="text-align:right">高潜成本</th></tr></thead>
-          <tbody>${accList.map(a => `<tr>
+          <thead><tr><th>渠道来源</th><th>账户</th><th style="text-align:right">消耗</th><th style="text-align:right">占比</th><th style="text-align:right">加粉</th><th style="text-align:right">加粉成本</th><th style="text-align:right">高潜成交</th><th style="text-align:right">高潜成本</th></tr></thead>
+          <tbody>${accList.map(a => {
+            const m = chMeta(a.channel);
+            return `<tr>
+            <td><span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;color:${m.color};background:${m.bg}">${m.label}</span></td>
             <td><b>${a.name}</b></td>
             <td style="text-align:right">${fmtMoney(a.cost)}</td>
             <td style="text-align:right">${totCost > 0 ? (a.cost / totCost * 100).toFixed(1) + '%' : '-'}</td>
@@ -597,7 +612,8 @@ window.render_ad_report = async function(page) {
             <td style="text-align:right">${a.addFans > 0 ? fmtMoney(a.cost / a.addFans) : '-'}</td>
             <td style="text-align:right;color:var(--klein)">${a.deepConvert}</td>
             <td style="text-align:right">${a.deepConvert > 0 ? fmtMoney(a.cost / a.deepConvert) : '-'}</td>
-          </tr>`).join('') || '<tr><td colspan="7" class="muted" style="text-align:center;padding:24px">该区间暂无数据</td></tr>'}</tbody>
+          </tr>`;
+          }).join('') || '<tr><td colspan="8" class="muted" style="text-align:center;padding:24px">该区间暂无数据</td></tr>'}</tbody>
         </table></div>
       </div>
     `;

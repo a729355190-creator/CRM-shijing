@@ -193,7 +193,10 @@ app.post('/api/list', v6Required, (req, res) => {
     if (user.role !== 'hq' && user.teamId) {
       if (user.role === 'ad' && c === 'ad') {
         // 投放用户：只能看投放数据
-        rows = db.prepare(`SELECT data FROM shijing_ad WHERE deleted = 0 AND JSON_EXTRACT(data, '$.teamId') = ?`).all(user.teamId);
+        // 2026-07-05 临时调整：巨量AD/本地推账户与投放1/2/3部之间暂无业务归属映射关系，
+        // 先对所有投放角色开放全部账户数据（含自动同步的oceanengine_*/oceanengine_local_*），
+        // 待补充"账户→团队"映射配置后再按团队收窄（TODO: accountTeamMap）
+        rows = db.prepare(`SELECT data FROM shijing_ad WHERE deleted = 0`).all();
       } else if (user.role === 'cs' && (c === 'cs' || c === 'invite')) {
         // 客服用户：能看客服数据 + 排客数据（按 csTeamId 过滤）
         if (c === 'cs') {
@@ -1825,7 +1828,8 @@ app.get('/api/oceanengine/by-city', v6Required, (req, res) => {
     return res.json({ ok: true, data: [] });
   }
   const adAll = db.prepare('SELECT data FROM shijing_ad WHERE deleted=0').all().map(r => JSON.parse(r.data));
-  const all = (user.role === 'hq') ? adAll : adAll.filter(r => r.teamId === user.teamId);
+  // 2026-07-05 临时调整：账户与团队暂无映射关系，投放角色先看全部投放数据（TODO: accountTeamMap后收窄）
+  const all = adAll;
   const cfgMain = db.prepare("SELECT data FROM shijing_config WHERE id=?").get("main");
   const teamConfig = cfgMain ? (JSON.parse(cfgMain.data).teams || {}) : {};
   const cityRows = all.filter(x => {
@@ -2112,7 +2116,8 @@ app.get('/api/marketing/channel-report', v6Required, (req, res) => {
     return res.json({ ok: true, data: { channels: [], accounts: [] } });
   }
   const adAll = db.prepare('SELECT data FROM shijing_ad WHERE deleted=0').all().map(r => JSON.parse(r.data));
-  const all = (user.role === 'hq') ? adAll : adAll.filter(r => r.teamId === user.teamId);
+  // 2026-07-05 临时调整：账户与团队暂无映射关系，投放角色先看全部投放数据（TODO: accountTeamMap后收窄）
+  const all = adAll;
   const recs = all.filter(x => {
     if (start && x.date < start) return false;
     if (end && x.date > end) return false;
@@ -2190,7 +2195,8 @@ app.get('/api/marketing/channel-city-report', v6Required, (req, res) => {
     return res.json({ ok: true, data: [] });
   }
   const adAll = db.prepare('SELECT data FROM shijing_ad WHERE deleted=0').all().map(r => JSON.parse(r.data));
-  const all = (user.role === 'hq') ? adAll : adAll.filter(r => r.teamId === user.teamId);
+  // 2026-07-05 临时调整：账户与团队暂无映射关系，投放角色先看全部投放数据（TODO: accountTeamMap后收窄）
+  const all = adAll;
   
   const recs = all.filter(x => {
     if (!x.cityName) return false;
@@ -2260,7 +2266,8 @@ app.get('/api/marketing/channel-city-daily', v6Required, (req, res) => {
     return res.json({ ok: true, data: [] });
   }
   const adAll = db.prepare('SELECT data FROM shijing_ad WHERE deleted=0').all().map(r => JSON.parse(r.data));
-  const all = (user.role === 'hq') ? adAll : adAll.filter(r => r.teamId === user.teamId);
+  // 2026-07-05 临时调整：账户与团队暂无映射关系，投放角色先看全部投放数据（TODO: accountTeamMap后收窄）
+  const all = adAll;
   
   const recs = all.filter(x => {
     if (!x.cityName) return false;
