@@ -117,15 +117,29 @@ module.exports = function installOceanengineLocal(app, db, opts) {
   }
 
   // 同步一遍本地推账户列表到配置（供前端展示/选择同步范围）
+  // 【2026-07-05 改为合并式更新，不再整体覆盖】：账户认领功能会在每个账户对象上
+  // 挂 ownerId/ownerName/ownerTeamId/claimedAt 归属字段，这些字段不是巨量接口返回的，
+  // 只存在于我们自己的配置里。如果这里每次都用接口返回的新数组整体替换掉旧数组，
+  // 每天早8:40自动同步一跑，所有人认领的归属信息就会被清空——必须按 accountId 合并：
+  // 已存在的账户只更新 accountName（账户名可能改），保留其余自定义字段；新出现的账户追加进去（归属为空）。
   async function syncLocalAccountList() {
     const tok = await getBpToken();
     if (!tok.ok) return tok;
     const list = await fetchEbpAccountList(tok.accessToken, tok.bpId, 'LOCAL');
     const cfg = getConfig() || {};
     cfg.oceanengine = cfg.oceanengine || {};
-    cfg.oceanengine.localAccounts = list.map(a => ({ accountId: String(a.account_id), accountName: a.account_name }));
+    const old = cfg.oceanengine.localAccounts || [];
+    const oldMap = new Map(old.map(a => [String(a.accountId), a]));
+    const merged = list.map(a => {
+      const id = String(a.account_id);
+      const prev = oldMap.get(id);
+      return prev
+        ? { ...prev, accountId: id, accountName: a.account_name }
+        : { accountId: id, accountName: a.account_name, ownerId: null, ownerName: null, ownerTeamId: null, claimedAt: null };
+    });
+    cfg.oceanengine.localAccounts = merged;
     setConfig(cfg);
-    return { ok: true, count: list.length, accounts: cfg.oceanengine.localAccounts };
+    return { ok: true, count: merged.length, accounts: merged };
   }
 
   // ========= 路径1：报表接口，拿 消耗/展示/点击（按天）=========

@@ -1069,4 +1069,100 @@ window.render_cs_materials = function (page) {
   window.__upState.tab = 'list';
   return render_cs_upload(page);
 };
+
+// ===== 投放线：账户认领（2026-07-05）=====
+// 投放人员自助多选巨量AD/本地推账户进行认领，认领后立即生效归属自己所在团队。
+// 唯一归属：一个账户只能被一个团队认领；已被其他团队认领的账户接口层面完全不返回。
+window.__adClaimState = { selected: new Set() }; // key = accountType+'_'+accountId
+
+window.render_ad_claim = async function (page) {
+  page.innerHTML = '<div class="loading">数据加载中...</div>';
+  const r = await api.get('/api/oceanengine/accounts/claimable');
+  if (!r.ok) { page.innerHTML = `<div class="card"><p class="muted">加载失败：${esc(r.error || '')}</p></div>`; return; }
+  window.__adClaimData = r;
+  window.__adClaimState.selected = new Set();
+  renderAdClaimPage(page);
+};
+
+function renderAdClaimPage(page) {
+  const { adAccounts = [], localAccounts = [] } = window.__adClaimData || {};
+  const sel = window.__adClaimState.selected;
+
+  const rowHtml = (a) => {
+    const key = a.accountType + '_' + a.accountId;
+    const checked = sel.has(key) ? 'checked' : '';
+    const statusBadge = a.mine
+      ? `<span style="color:var(--klein);font-weight:600">已认领（我）</span>`
+      : `<span class="muted">未认领</span>`;
+    return `
+      <tr>
+        <td><input type="checkbox" data-key="${escAttr(key)}" onchange="toggleAdClaimSelect(this)" ${checked}></td>
+        <td>${esc(a.accountName)}</td>
+        <td class="muted" style="font-size:12px">${esc(a.accountId)}</td>
+        <td>${statusBadge}</td>
+        <td class="muted" style="font-size:12px">${a.claimedAt ? new Date(a.claimedAt).toLocaleString('zh-CN') : '-'}</td>
+      </tr>`;
+  };
+
+  const selCount = sel.size;
+
+  page.innerHTML = `
+    <div class="card">
+      <h3>🎯 账户认领</h3>
+      <p class="muted" style="margin:4px 0 12px">勾选下方巨量AD/本地推账户后点击"认领选中账户"，认领后立即归属你所在的团队。已被其他团队认领的账户不会显示在此列表。</p>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button id="adClaimBtn" class="btn btn-primary" onclick="submitAdClaim('claim')" ${selCount ? '' : 'disabled'}>✅ 认领选中账户（${selCount}）</button>
+        <button id="adUnclaimBtn" class="btn" onclick="submitAdClaim('unclaim')" ${selCount ? '' : 'disabled'}>↩️ 取消认领选中账户</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>📡 巨量AD账户（${adAccounts.length}）</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th></th><th>账户名</th><th>账户ID</th><th>状态</th><th>认领时间</th></tr></thead>
+        <tbody>${adAccounts.map(rowHtml).join('') || '<tr><td colspan="5" class="muted" style="text-align:center;padding:24px">暂无可见账户</td></tr>'}</tbody>
+      </table></div>
+    </div>
+
+    <div class="card">
+      <h3>📍 本地推账户（${localAccounts.length}）</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th></th><th>账户名</th><th>账户ID</th><th>状态</th><th>认领时间</th></tr></thead>
+        <tbody>${localAccounts.map(rowHtml).join('') || '<tr><td colspan="5" class="muted" style="text-align:center;padding:24px">暂无可见账户</td></tr>'}</tbody>
+      </table></div>
+    </div>
+  `;
+}
+
+window.toggleAdClaimSelect = function (checkbox) {
+  const key = checkbox.dataset.key;
+  if (checkbox.checked) window.__adClaimState.selected.add(key);
+  else window.__adClaimState.selected.delete(key);
+  // 只需要更新按钮上的计数，不用整页重渲染（避免丢失其他勾选状态）
+  const n = window.__adClaimState.selected.size;
+  const claimBtn = document.getElementById('adClaimBtn');
+  const unclaimBtn = document.getElementById('adUnclaimBtn');
+  if (claimBtn) { claimBtn.textContent = `✅ 认领选中账户（${n}）`; claimBtn.disabled = n === 0; }
+  if (unclaimBtn) unclaimBtn.disabled = n === 0;
+};
+
+window.submitAdClaim = async function (action) {
+  const sel = window.__adClaimState.selected;
+  if (!sel.size) return;
+  const items = [...sel].map(key => {
+    const idx = key.indexOf('_');
+    return { accountType: key.slice(0, idx), accountId: key.slice(idx + 1) };
+  });
+  const url = action === 'claim' ? '/api/oceanengine/accounts/claim' : '/api/oceanengine/accounts/unclaim';
+  const r = await api.post(url, { items });
+  if (!r.ok && action === 'claim' && r.conflicts && r.conflicts.length) {
+    const msg = r.conflicts.map(c => `${c.accountName || c.accountId}：${c.error}`).join('；');
+    showToast('部分账户认领失败：' + msg, 'error', 3000);
+  } else if (r.ok) {
+    showToast(action === 'claim' ? '认领成功' : '已取消认领', 'success');
+  } else {
+    showToast('操作失败：' + (r.error || ''), 'error');
+  }
+  await render_ad_claim(document.getElementById('page'));
+};
 window.render_hq_materials = window.render_cs_materials;

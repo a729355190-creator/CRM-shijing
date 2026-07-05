@@ -100,6 +100,43 @@ function setConfig(cfg) {
     .run(j, Date.now());
 }
 
+// ===== 巨量AD/本地推账户认领机制（2026-07-05）=====
+// 背景：投放1/2/3部登录后原本按 teamId 精确过滤 shijing_ad 数据，但巨量AD/本地推账户是
+// 自动同步产生的（teamId='oceanengine_<账户ID>'/'oceanengine_local_<账户ID>'），跟人工的
+// ad_1/ad_2/ad_3 团队没有天然映射关系，一度被迫临时改为"全部开放"。
+// 现在改为"投放人员自助认领账户"：cfg.oceanengine.subAccounts / localAccounts 数组里每个
+// 账户对象新增 ownerId/ownerName/ownerTeamId/claimedAt 字段，投放人员在"账户认领"页面
+// 勾选账户点击认领后立即写入归属（唯一归属，立即生效，无需HQ审批）。
+// 可见范围规则：
+//   - HQ：始终看全部（不受认领限制）
+//   - 已被A团队认领的账户：只有A团队能看，其余投放团队完全看不到（连账户名都不可见）
+//   - 未被任何人认领的账户：仅HQ可见，所有投放角色都看不到
+//   - manual(手动录入)/oceanengine_legacy(历史导入) 等非自动同步渠道：这些记录的 teamId
+//     本来就是人工团队ID(ad_1/ad_2/ad_3)，跟账户认领无关，按原有 teamId 精确匹配即可。
+function getAccountOwnerMap() {
+  const cfg = getConfig() || {};
+  const oe = cfg.oceanengine || {};
+  const map = new Map();
+  for (const a of (oe.subAccounts || [])) map.set(String(a.accountId), a.ownerTeamId || null);
+  for (const a of (oe.localAccounts || [])) map.set(String(a.accountId), a.ownerTeamId || null);
+  return map;
+}
+
+// 按账户认领归属过滤 shijing_ad 记录数组（HQ 传 null 表示不过滤，直接返回全部）
+function filterAdRowsByOwnership(rows, user) {
+  if (!user || user.role === 'hq') return rows;
+  const ownerMap = getAccountOwnerMap();
+  return rows.filter(r => {
+    if (r.ocAccountId) {
+      // 自动同步的巨量AD/本地推记录：按账户认领归属判断，未认领或被别的团队认领都不可见
+      const ownerTeamId = ownerMap.get(String(r.ocAccountId));
+      return ownerTeamId === user.teamId;
+    }
+    // 手动录入/历史导入等非账户类记录：按人工团队ID精确匹配（原有逻辑）
+    return r.teamId === user.teamId;
+  });
+}
+
 // 默认配置（首次启动初始化）
 const DEFAULT_CONFIG = {
   teams: {
@@ -192,11 +229,11 @@ app.post('/api/list', v6Required, (req, res) => {
     // - 门店用户：只能看门店数据，按 teamId 过滤
     if (user.role !== 'hq' && user.teamId) {
       if (user.role === 'ad' && c === 'ad') {
-        // 投放用户：只能看投放数据
-        // 2026-07-05 临时调整：巨量AD/本地推账户与投放1/2/3部之间暂无业务归属映射关系，
-        // 先对所有投放角色开放全部账户数据（含自动同步的oceanengine_*/oceanengine_local_*），
-        // 待补充"账户→团队"映射配置后再按团队收窄（TODO: accountTeamMap）
-        rows = db.prepare(`SELECT data FROM shijing_ad WHERE deleted = 0`).all();
+        // 投放用户：只能看投放数据，按账户认领归属过滤（2026-07-05 改为认领机制，见 filterAdRowsByOwnership）
+        const rawRows = db.prepare(`SELECT data FROM shijing_ad WHERE deleted = 0`).all().map(r => JSON.parse(r.data));
+        const filtered = filterAdRowsByOwnership(rawRows, user);
+        out[c] = filtered;
+        continue;
       } else if (user.role === 'cs' && (c === 'cs' || c === 'invite')) {
         // 客服用户：能看客服数据 + 排客数据（按 csTeamId 过滤）
         if (c === 'cs') {
@@ -1819,6 +1856,106 @@ app.get('/api/oceanengine/sync-status', v6Required, (req, res) => {
   });
 });
 
+// ===== 巨量AD/本地推账户认领 API（2026-07-05）=====
+
+// 投放人员视角：拉取"可认领"账户列表 = 未被任何人认领的账户 + 已被自己(或本团队)认领的账户
+// 已被其他团队认领的账户完全不返回（连账户名都不可见）
+app.get('/api/oceanengine/accounts/claimable', v6Required, (req, res) => {
+  const user = req.v6User;
+  if (user.role !== 'ad') return res.json({ ok: false, error: 'ad role only' });
+  const cfg = getConfig() || {};
+  const oe = cfg.oceanengine || {};
+  const pick = (a, type) => ({
+    accountId: a.accountId,
+    accountName: a.accountName,
+    accountType: type, // 'AD' | 'LOCAL'
+    ownerId: a.ownerId || null,
+    ownerName: a.ownerName || null,
+    ownerTeamId: a.ownerTeamId || null,
+    claimedAt: a.claimedAt || null,
+    mine: a.ownerTeamId === user.teamId,
+  });
+  const visible = a => !a.ownerTeamId || a.ownerTeamId === user.teamId; // 未认领 或 本团队已认领 才可见
+  const adAccounts = (oe.subAccounts || []).filter(visible).map(a => pick(a, 'AD'));
+  const localAccounts = (oe.localAccounts || []).filter(visible).map(a => pick(a, 'LOCAL'));
+  res.json({ ok: true, adAccounts, localAccounts });
+});
+
+// 认领：唯一归属+立即生效。传 { items: [{accountId, accountType}] }，accountType='AD'|'LOCAL'
+app.post('/api/oceanengine/accounts/claim', v6Required, (req, res) => {
+  const user = req.v6User;
+  if (user.role !== 'ad') return res.json({ ok: false, error: 'ad role only' });
+  const { items } = req.body || {};
+  if (!Array.isArray(items) || !items.length) return res.json({ ok: false, error: '未选择账户' });
+  const cfg = getConfig() || {};
+  cfg.oceanengine = cfg.oceanengine || {};
+  cfg.oceanengine.subAccounts = cfg.oceanengine.subAccounts || [];
+  cfg.oceanengine.localAccounts = cfg.oceanengine.localAccounts || [];
+  const now = Date.now();
+  const conflicts = [];
+  const claimedNames = [];
+  for (const it of items) {
+    const list = it.accountType === 'LOCAL' ? cfg.oceanengine.localAccounts : cfg.oceanengine.subAccounts;
+    const acc = list.find(a => String(a.accountId) === String(it.accountId));
+    if (!acc) { conflicts.push({ accountId: it.accountId, error: '账户不存在' }); continue; }
+    if (acc.ownerTeamId && acc.ownerTeamId !== user.teamId) {
+      conflicts.push({ accountId: it.accountId, accountName: acc.accountName, error: '已被其他团队认领' });
+      continue;
+    }
+    acc.ownerId = user.id;
+    acc.ownerName = user.realName;
+    acc.ownerTeamId = user.teamId;
+    acc.claimedAt = now;
+    claimedNames.push(acc.accountName);
+  }
+  setConfig(cfg);
+  res.json({ ok: conflicts.length === 0, claimed: claimedNames, conflicts });
+});
+
+// 取消认领：传 { items: [{accountId, accountType}] }。只能取消自己团队认领的账户
+app.post('/api/oceanengine/accounts/unclaim', v6Required, (req, res) => {
+  const user = req.v6User;
+  if (user.role !== 'ad') return res.json({ ok: false, error: 'ad role only' });
+  const { items } = req.body || {};
+  if (!Array.isArray(items) || !items.length) return res.json({ ok: false, error: '未选择账户' });
+  const cfg = getConfig() || {};
+  cfg.oceanengine = cfg.oceanengine || {};
+  cfg.oceanengine.subAccounts = cfg.oceanengine.subAccounts || [];
+  cfg.oceanengine.localAccounts = cfg.oceanengine.localAccounts || [];
+  let unclaimed = 0;
+  for (const it of items) {
+    const list = it.accountType === 'LOCAL' ? cfg.oceanengine.localAccounts : cfg.oceanengine.subAccounts;
+    const acc = list.find(a => String(a.accountId) === String(it.accountId));
+    if (!acc) continue;
+    if (acc.ownerTeamId !== user.teamId) continue; // 只能取消本团队认领的
+    acc.ownerId = null; acc.ownerName = null; acc.ownerTeamId = null; acc.claimedAt = null;
+    unclaimed++;
+  }
+  setConfig(cfg);
+  res.json({ ok: true, unclaimed });
+});
+
+// HQ视角：查看全部45个账户的认领情况总览（只读）
+app.get('/api/oceanengine/accounts/ownership-overview', v6HQRequired, (req, res) => {
+  const cfg = getConfig() || {};
+  const oe = cfg.oceanengine || {};
+  const pick = (a, type) => ({
+    accountId: a.accountId, accountName: a.accountName, accountType: type,
+    ownerId: a.ownerId || null, ownerName: a.ownerName || null,
+    ownerTeamId: a.ownerTeamId || null, claimedAt: a.claimedAt || null,
+  });
+  const adAccounts = (oe.subAccounts || []).map(a => pick(a, 'AD'));
+  const localAccounts = (oe.localAccounts || []).map(a => pick(a, 'LOCAL'));
+  const all = [...adAccounts, ...localAccounts];
+  res.json({
+    ok: true,
+    total: all.length,
+    claimed: all.filter(a => a.ownerTeamId).length,
+    unclaimed: all.filter(a => !a.ownerTeamId).length,
+    adAccounts, localAccounts,
+  });
+});
+
 // API：按城市投产看板数据
 app.get('/api/oceanengine/by-city', v6Required, (req, res) => {
   const { start, end } = req.query || {};
@@ -1828,8 +1965,7 @@ app.get('/api/oceanengine/by-city', v6Required, (req, res) => {
     return res.json({ ok: true, data: [] });
   }
   const adAll = db.prepare('SELECT data FROM shijing_ad WHERE deleted=0').all().map(r => JSON.parse(r.data));
-  // 2026-07-05 临时调整：账户与团队暂无映射关系，投放角色先看全部投放数据（TODO: accountTeamMap后收窄）
-  const all = adAll;
+  const all = filterAdRowsByOwnership(adAll, user);
   const cfgMain = db.prepare("SELECT data FROM shijing_config WHERE id=?").get("main");
   const teamConfig = cfgMain ? (JSON.parse(cfgMain.data).teams || {}) : {};
   const cityRows = all.filter(x => {
@@ -2116,8 +2252,7 @@ app.get('/api/marketing/channel-report', v6Required, (req, res) => {
     return res.json({ ok: true, data: { channels: [], accounts: [] } });
   }
   const adAll = db.prepare('SELECT data FROM shijing_ad WHERE deleted=0').all().map(r => JSON.parse(r.data));
-  // 2026-07-05 临时调整：账户与团队暂无映射关系，投放角色先看全部投放数据（TODO: accountTeamMap后收窄）
-  const all = adAll;
+  const all = filterAdRowsByOwnership(adAll, user);
   const recs = all.filter(x => {
     if (start && x.date < start) return false;
     if (end && x.date > end) return false;
@@ -2195,8 +2330,7 @@ app.get('/api/marketing/channel-city-report', v6Required, (req, res) => {
     return res.json({ ok: true, data: [] });
   }
   const adAll = db.prepare('SELECT data FROM shijing_ad WHERE deleted=0').all().map(r => JSON.parse(r.data));
-  // 2026-07-05 临时调整：账户与团队暂无映射关系，投放角色先看全部投放数据（TODO: accountTeamMap后收窄）
-  const all = adAll;
+  const all = filterAdRowsByOwnership(adAll, user);
   
   const recs = all.filter(x => {
     if (!x.cityName) return false;
@@ -2266,8 +2400,7 @@ app.get('/api/marketing/channel-city-daily', v6Required, (req, res) => {
     return res.json({ ok: true, data: [] });
   }
   const adAll = db.prepare('SELECT data FROM shijing_ad WHERE deleted=0').all().map(r => JSON.parse(r.data));
-  // 2026-07-05 临时调整：账户与团队暂无映射关系，投放角色先看全部投放数据（TODO: accountTeamMap后收窄）
-  const all = adAll;
+  const all = filterAdRowsByOwnership(adAll, user);
   
   const recs = all.filter(x => {
     if (!x.cityName) return false;
