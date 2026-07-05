@@ -58,7 +58,7 @@ window.render_ad_overview = async function(page) {
     <div class="card">
       <h3>📅 近 7 天每日明细</h3>
       <div class="table-wrap"><table>
-        <thead><tr><th>日期</th><th style="text-align:right">消耗</th><th style="text-align:right">加粉</th><th style="text-align:right">加粉成本</th><th style="text-align:right">高潜</th><th style="text-align:right">高潜成本</th></tr></thead>
+        <thead><tr><th>日期</th><th style="text-align:right">消耗</th><th style="text-align:right">加粉</th><th style="text-align:right">加粉成本</th><th style="text-align:right">${deepLabel}</th><th style="text-align:right">${deepLabel}成本</th></tr></thead>
         <tbody>
           ${dayRows.map(d => `<tr>
             <td>${d.date}</td>
@@ -696,18 +696,23 @@ window.render_ad_channels = async function(page) {
     const ad = (DB.ad || []).filter(x => !x.cityName && x.date >= start && x.date <= end && (x.mediaChannel === 'oceanengine' || x.mediaChannel === 'oceanengine_legacy' || !x.mediaChannel));
     body.innerHTML = renderChannelTable('巨量 AD（信息流）', ad);
   } else if (st.tab === 'local') {
-    body.innerHTML = `
-      <div class="card">
-        <h3>📍 本地推</h3>
-        <p class="muted">巨量本地推 / 抖音同城投放数据。当前账户已通过巨量授权一并获取，下一步将用 promotion_type=local 维度区分。</p>
-        <div class="kpi-grid">
-          <div class="kpi"><div class="kpi-label">本月消耗</div><div class="kpi-value muted">待接入</div></div>
-          <div class="kpi"><div class="kpi-label">加粉</div><div class="kpi-value muted">待接入</div></div>
-          <div class="kpi"><div class="kpi-label">高潜</div><div class="kpi-value muted">待接入</div></div>
+    // 巨量本地推：2026-07-05 已接入，复用AD工作台token双路同步（报表接口拉消耗/展示/点击 + 线索明细接口拉真实留资数）
+    const local = (DB.ad || []).filter(x => x.date >= start && x.date <= end && x.mediaChannel === 'oceanengine_local');
+    if (local.length) {
+      body.innerHTML = renderChannelTable('巨量本地推', local, { deepLabel: '预付定金', deepNote: '⚠️ 预付定金数暂缺：巨量本地推线索接口未回传该状态（需门店/客服在巨量后台标记"定金或钩子品支付"后才有数据，目前尚未配置回传，故此列恒为0，不代表真实转化为0）。消耗、留资数（=加粉数）均为真实数据。' });
+    } else {
+      body.innerHTML = `
+        <div class="card">
+          <h3>📍 本地推</h3>
+          <p class="muted">该时间段本地推账户无消耗数据（22个已授权账户中通常仅1个在跑量）。</p>
+          <div class="kpi-grid">
+            <div class="kpi"><div class="kpi-label">本月消耗</div><div class="kpi-value muted">¥0</div></div>
+            <div class="kpi"><div class="kpi-label">加粉</div><div class="kpi-value muted">0</div></div>
+            <div class="kpi"><div class="kpi-label">高潜</div><div class="kpi-value muted">-</div></div>
+          </div>
         </div>
-        <p class="muted" style="font-size:11px;margin-top:12px">📌 实施计划：在 ocFetchReport 加 promotion_type=LOCAL 维度过滤，独立写入 ad 表（mediaChannel='oceanengine_local'）。</p>
-      </div>
-    `;
+      `;
+    }
   } else {
     body.innerHTML = `
       <div class="card">
@@ -723,7 +728,9 @@ window.render_ad_channels = async function(page) {
     `;
   }
 
-  function renderChannelTable(title, data) {
+  function renderChannelTable(title, data, opts) {
+    opts = opts || {};
+    const deepLabel = opts.deepLabel || '高潜';
     const byAcc = {};
     data.forEach(x => {
       const k = x.ocAccountName || x.ocAccountId || x.teamId || '默认';
@@ -741,9 +748,10 @@ window.render_ad_channels = async function(page) {
           <div class="kpi"><div class="kpi-label">总消耗</div><div class="kpi-value">${fmtMoney(tot.cost)}</div></div>
           <div class="kpi"><div class="kpi-label">总加粉</div><div class="kpi-value">${tot.fans}</div></div>
           <div class="kpi"><div class="kpi-label">加粉成本</div><div class="kpi-value">${tot.fans > 0 ? fmtMoney(tot.cost / tot.fans) : '-'}</div></div>
-          <div class="kpi"><div class="kpi-label">总高潜</div><div class="kpi-value" style="color:var(--klein)">${tot.deep}</div></div>
-          <div class="kpi"><div class="kpi-label">高潜成本</div><div class="kpi-value">${tot.deep > 0 ? fmtMoney(tot.cost / tot.deep) : '-'}</div></div>
+          <div class="kpi"><div class="kpi-label">总${deepLabel}</div><div class="kpi-value" style="color:var(--klein)">${tot.deep}</div></div>
+          <div class="kpi"><div class="kpi-label">${deepLabel}成本</div><div class="kpi-value">${tot.deep > 0 ? fmtMoney(tot.cost / tot.deep) : '-'}</div></div>
         </div>
+        ${opts.deepNote ? `<p class="muted" style="font-size:11px;margin-top:10px;line-height:1.6">${opts.deepNote}</p>` : ''}
         <div class="table-wrap" style="margin-top:14px"><table>
           <thead><tr><th>账户</th><th style="text-align:right">消耗</th><th style="text-align:right">占比</th><th style="text-align:right">加粉</th><th style="text-align:right">加粉成本</th><th style="text-align:right">高潜</th><th style="text-align:right">高潜成本</th></tr></thead>
           <tbody>${rows.map(r => `<tr>

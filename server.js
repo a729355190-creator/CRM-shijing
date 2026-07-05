@@ -160,6 +160,7 @@ v6UserSystem(app, db);
 v6AppRoutes(app, db);
 v6Creatives(app, db, { ocGetValidToken, getConfig });
 require("./v6-uploads")(app, db);
+require("./v6-oceanengine-local")(app, db, { getConfig, setConfig, pushWecom, cron, v6HQRequired });
 v6Scripts(app, db);
 app.use(express.static(path.join(ROOT, 'public')));
 
