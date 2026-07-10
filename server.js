@@ -686,11 +686,37 @@ function calcDailyReport(date) {
   const noShow = invite.filter(x => x.status === 'no_show').length;
   const pending = invite.filter(x => x.status === 'pending').length;
 
-  return [adCost, addFans, deepConvert, deepRate, deepCost, depositCount, newC, oldC, newArrive, oldArrive, arriveCost, opCount, closeCount, newRev, oldRev, revenue, roi, arrived, noShow, pending, invite.length];
+  // ★ 渠道拆分：巨量AD(oceanengine) vs 本地推(oceanengine_local) [2026-07-10新增]
+  const channelBreakdown = {};
+  for (const row of ad) {
+    const ch = row.mediaChannel === 'oceanengine_local' ? '本地推' : (row.mediaChannel === 'oceanengine' ? '巨量AD' : (row.mediaChannel || '其他'));
+    if (!channelBreakdown[ch]) channelBreakdown[ch] = { cost: 0, addFans: 0, deepConvert: 0 };
+    channelBreakdown[ch].cost += (row.cost || 0);
+    channelBreakdown[ch].addFans += (row.addFans || 0);
+    channelBreakdown[ch].deepConvert += (row.deepConvert || 0);
+  }
+
+  // ★ 市场线城市拆分：按门店 teamId -> city 动态映射汇总 [2026-07-10新增]
+  const cityMap = getStoreCityMap();
+  const cityBreakdown = {};
+  for (const row of store) {
+    const city = cityMap[row.teamId] || row.teamId || '(未知)';
+    if (!cityBreakdown[city]) cityBreakdown[city] = { newArrive: 0, oldArrive: 0, revenue: 0, closeCount: 0 };
+    if (row.customerType === '新客') {
+      cityBreakdown[city].newArrive += 1;
+      if (row.isClosed === '是') cityBreakdown[city].closeCount += 1;
+    } else if (row.customerType === '老客') {
+      cityBreakdown[city].oldArrive += 1;
+    }
+    cityBreakdown[city].revenue += (row.opAmount || 0) + (row.closedAmount || 0);
+  }
+
+  // __PATCHED_CALC_RETURN__
+  return [adCost, addFans, deepConvert, deepRate, deepCost, depositCount, newC, oldC, newArrive, oldArrive, arriveCost, opCount, closeCount, newRev, oldRev, revenue, roi, arrived, noShow, pending, invite.length, channelBreakdown, cityBreakdown];
 }
 
 async function runDailyReport(date) {
-  const [adCost, addFans, deepConvert, deepRate, deepCost, depositCount, newC, oldC, newArrive, oldArrive, arriveCost, opCount, closeCount, newRev, oldRev, revenue, roi, arrived, noShow, pending, totalInvite] = calcDailyReport(date);
+  const [adCost, addFans, deepConvert, deepRate, deepCost, depositCount, newC, oldC, newArrive, oldArrive, arriveCost, opCount, closeCount, newRev, oldRev, revenue, roi, arrived, noShow, pending, totalInvite, channelBreakdown, cityBreakdown] = calcDailyReport(date); // __PATCHED_DESTRUCTURE__
   const cfg = getConfig();
   const hq = cfg && cfg.wecomConfig && cfg.wecomConfig.hqWebhook;
   if (!hq) { console.log('[daily-report] no hq webhook'); return; }
@@ -705,18 +731,33 @@ async function runDailyReport(date) {
       '> <font color="warning">该日暂无业务数据录入</font>\n\n' +
       '请各团队负责人确认是否有数据漏录。';
   } else {
+    // __PATCHED_TEMPLATE__ 渠道/城市明细文案 [2026-07-10新增]
+    const channelOrder = ['巨量AD', '本地推'];
+    const channelKeys = channelOrder.filter(ch => channelBreakdown[ch]).concat(Object.keys(channelBreakdown).filter(ch => !channelOrder.includes(ch)));
+    const channelLines = channelKeys.map(ch => {
+      const c = channelBreakdown[ch];
+      return '> · ' + ch + '：消耗' + fmt(c.cost) + ' | 加粉' + c.addFans + '人 | 深转' + c.deepConvert + '人';
+    }).join('\n');
+    const cityKeys = Object.keys(cityBreakdown).sort((a, b) => cityBreakdown[b].revenue - cityBreakdown[a].revenue);
+    const cityLines = cityKeys.map(city => {
+      const c = cityBreakdown[city];
+      return '> · ' + city + '：新客到店' + c.newArrive + '人 | 老客到店' + c.oldArrive + '人 | 营业额' + fmt(c.revenue);
+    }).join('\n');
+
     content = '## 📊 仕净系统每日数据简报\n' +
       '> 数据日期：**' + date + '**\n' +
       '> 推送时间：' + new Date().toLocaleString('zh-CN') + '\n\n' +
       '### 💰 营销线\n' +
       '> 广告消耗：**' + fmt(adCost) + '** | 加粉：**' + addFans + '** 人 | 加粉成本：' + fmt(safeDiv(adCost, addFans)) + '\n' +
-      '> 深转成交：**' + deepConvert + '** 人 | 深转率：**' + pct(deepRate) + '** | 深转成本：' + (deepConvert ? fmt(deepCost) : '-') + '\n\n' +
+      '> 深转成交：**' + deepConvert + '** 人 | 深转率：**' + pct(deepRate) + '** | 深转成本：' + (deepConvert ? fmt(deepCost) : '-') + '\n' +
+      (channelLines ? channelLines + '\n' : '') + '\n' +
       '### 📞 客服销售线\n' +
       '> 定金数：**' + depositCount + '** 单 | 定金成本：' + fmt(safeDiv(adCost, depositCount)) + '\n\n' +
       '### 🏪 市场线\n' +
       '> 新客到店：**' + newArrive + '** 人 | 到店成本：' + fmt(arriveCost) + '\n' +
       '> 老客到店：**' + oldArrive + '** 人（不计入到店成本）\n' +
-      '> 操作：' + opCount + ' (' + pct(safeDiv(opCount, newArrive)*100) + ') | 成单：' + closeCount + ' (' + pct(safeDiv(closeCount, newArrive)*100) + ')\n\n' +
+      '> 操作：' + opCount + ' (' + pct(safeDiv(opCount, newArrive)*100) + ') | 成单：' + closeCount + ' (' + pct(safeDiv(closeCount, newArrive)*100) + ')\n' +
+      (cityLines ? cityLines + '\n' : '') + '\n' +
       '### 📋 客户邀约\n' +
       '> 总邀约：' + totalInvite + ' | 已到店：<font color="info">' + arrived + '</font> | 未到店：<font color="warning">' + noShow + '</font> | 待确认：' + pending + '\n\n' +
       '### 🎯 营业额\n' +
