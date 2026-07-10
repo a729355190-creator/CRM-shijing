@@ -806,16 +806,22 @@ window.render_cs_upload = window.render_hq_upload = async function (page) {
   if (!window.__upState) window.__upState = { tab: 'list', kind: 'image', filter: '' };
   const st = window.__upState;
 
-  // 拉素材列表
+  // 拉素材列表 + 分类列表（分类已改为后端可动态新增/停用，见 v6-uploads.js）
   let list = [];
+  let catRows = [];
   try {
-    const r = await api.get('/api/v6/uploads');
+    const [r, rc] = await Promise.all([
+      api.get('/api/v6/uploads'),
+      api.get('/api/v6/upload-categories'),
+    ]);
     if (r.ok) list = r.items || [];
+    if (rc.ok) catRows = rc.items || [];
   } catch (e) {}
-
-  // 客服素材分类（不再按文案/图片视频拆，统一一组场景类）
-  const TXT_CATS = ['破冰', '原理解释+答疑', '获取信任', '促定金', '排客', '沉默用户唤醒'];
-  const FILE_CATS = ['效果对比', '操作过程', '朋友圈素材', '人设搭建', '环境展示', '活动促销'];
+  const TXT_CATS = catRows.filter(c => c.kind === 'text').map(c => c.name);
+  const FILE_CATS = catRows.filter(c => c.kind === 'file').map(c => c.name);
+  const catIdMap = {}; // name -> id，方便 HQ 删除分类时查 id
+  catRows.forEach(c => { catIdMap[c.kind + '::' + c.name] = c.id; });
+  window.__upCatIdMap = catIdMap;
 
   const tabBtn = (k, t) => `<button class="btn ${st.tab===k?'btn-primary':''}" style="padding:8px 18px" onclick="setUpTab('${k}')">${t}</button>`;
   const kindBtn = (k, t) => `<button class="btn ${st.kind===k?'btn-primary':''}" style="height:30px;padding:0 12px;font-size:12px" onclick="setUpKind('${k}')">${t}</button>`;
@@ -902,7 +908,11 @@ window.render_cs_upload = window.render_hq_upload = async function (page) {
         <div style="margin-top:14px">
           <label class="lbl">分类 *</label>
           <div id="cat_chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
-            ${TXT_CATS.map(c => `<button type="button" class="cat-chip" data-cat="${c}" style="padding:6px 14px;border:1px solid var(--silver);border-radius:14px;background:#fff;cursor:pointer;font-size:12px">${c}</button>`).join('')}
+            ${TXT_CATS.map(c => `<span style="position:relative;display:inline-flex">
+              <button type="button" class="cat-chip" data-cat="${c}" style="padding:6px 14px;border:1px solid var(--silver);border-radius:14px;background:#fff;cursor:pointer;font-size:12px">${c}</button>
+              ${u.role === 'hq' ? `<span onclick="event.stopPropagation();delUpCategory('text','${c}')" title="停用类目" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;line-height:16px;text-align:center;border-radius:50%;background:var(--danger);color:#fff;font-size:10px;cursor:pointer">×</span>` : ''}
+            </span>`).join('')}
+            <button type="button" id="cat_add_btn" style="padding:6px 14px;border:1px dashed var(--klein);border-radius:14px;background:#fff;color:var(--klein);cursor:pointer;font-size:12px">＋ 新增类目</button>
           </div>
           <label class="lbl">标题 *（一句话概括，方便搜）</label>
           <input class="input" id="t_title" placeholder="如：定金犹豫客户的临门一脚" style="margin-bottom:12px"/>
@@ -917,13 +927,14 @@ window.render_cs_upload = window.render_hq_upload = async function (page) {
       <style>.lbl{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:6px}.cat-chip.active{background:var(--klein)!important;color:#fff!important;border-color:var(--klein)!important}</style>
     `;
     let pickedCat = null;
-    document.querySelectorAll('.cat-chip').forEach(b => {
+    document.querySelectorAll('#cat_chips .cat-chip').forEach(b => {
       b.addEventListener('click', () => {
-        document.querySelectorAll('.cat-chip').forEach(x => x.classList.remove('active'));
+        document.querySelectorAll('#cat_chips .cat-chip').forEach(x => x.classList.remove('active'));
         b.classList.add('active');
         pickedCat = b.dataset.cat;
       });
     });
+    document.getElementById('cat_add_btn').addEventListener('click', () => addUpCategory('text'));
     document.getElementById('t_submit').addEventListener('click', async () => {
       const status = document.getElementById('t_status');
       const title = document.getElementById('t_title').value.trim();
@@ -953,7 +964,11 @@ window.render_cs_upload = window.render_hq_upload = async function (page) {
         <div style="margin-top:14px">
           <label class="lbl">分类 *</label>
           <div id="fcat_chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
-            ${FILE_CATS.map(c => `<button type="button" class="cat-chip" data-cat="${c}" style="padding:6px 14px;border:1px solid var(--silver);border-radius:14px;background:#fff;cursor:pointer;font-size:12px">${c}</button>`).join('')}
+            ${FILE_CATS.map(c => `<span style="position:relative;display:inline-flex">
+              <button type="button" class="cat-chip" data-cat="${c}" style="padding:6px 14px;border:1px solid var(--silver);border-radius:14px;background:#fff;cursor:pointer;font-size:12px">${c}</button>
+              ${u.role === 'hq' ? `<span onclick="event.stopPropagation();delUpCategory('file','${c}')" title="停用类目" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;line-height:16px;text-align:center;border-radius:50%;background:var(--danger);color:#fff;font-size:10px;cursor:pointer">×</span>` : ''}
+            </span>`).join('')}
+            <button type="button" id="fcat_add_btn" style="padding:6px 14px;border:1px dashed var(--klein);border-radius:14px;background:#fff;color:var(--klein);cursor:pointer;font-size:12px">＋ 新增类目</button>
           </div>
           <label class="lbl">选择文件（可多选）*</label>
           <div id="drop_zone" style="border:2px dashed var(--silver);border-radius:8px;padding:30px;text-align:center;cursor:pointer;background:var(--silver-bg)">
@@ -981,6 +996,7 @@ window.render_cs_upload = window.render_hq_upload = async function (page) {
         updateSubmit();
       });
     });
+    document.getElementById('fcat_add_btn').addEventListener('click', () => addUpCategory('file'));
     const drop = document.getElementById('drop_zone');
     const fIn = document.getElementById('f_input');
     drop.addEventListener('click', () => fIn.click());
@@ -1060,6 +1076,34 @@ window.delUpItem = async function (id) {
   if (!confirm('删除这条素材？')) return;
   const r = await fetch('/api/v6/uploads/' + id, { method: 'DELETE' }).then(r => r.json());
   if (r.ok) { showToast('已删除', 'success'); render_cs_upload(document.getElementById('page')); }
+  else showToast('失败：' + (r.error || ''), 'error');
+};
+
+// 新增素材类目（2026-07-10）：文案分类(text) / 图片视频分类(file) 均可自助新增，
+// 免得后续素材种类变多时又要改代码硬编码数组。分类持久化在 shijing_upload_categories 表。
+window.addUpCategory = async function (kind) {
+  const label = kind === 'text' ? '文案' : '图片/视频';
+  const name = prompt(`新增${label}类目名称（≤20字）：`);
+  if (!name) return;
+  const n = name.trim();
+  if (!n) return;
+  const r = await api.post('/api/v6/upload-categories', { kind, name: n });
+  if (r.ok) {
+    showToast('已新增类目：' + n, 'success');
+    render_cs_upload(document.getElementById('page'));
+  } else {
+    const msg = r.error === 'duplicate_name' ? '该类目已存在' : (r.error || '新增失败');
+    showToast('✗ ' + msg, 'error');
+  }
+};
+
+// 停用类目（仅 HQ；软删除，不影响已有素材的历史分类文字显示）
+window.delUpCategory = async function (kind, name) {
+  const id = (window.__upCatIdMap || {})[kind + '::' + name];
+  if (!id) return showToast('未找到该类目', 'error');
+  if (!confirm(`停用类目「${name}」？（已有素材不受影响，仅新增时不再显示该选项）`)) return;
+  const r = await fetch('/api/v6/upload-categories/' + id, { method: 'DELETE' }).then(r => r.json());
+  if (r.ok) { showToast('已停用', 'success'); render_cs_upload(document.getElementById('page')); }
   else showToast('失败：' + (r.error || ''), 'error');
 };
 
