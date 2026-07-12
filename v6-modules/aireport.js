@@ -134,9 +134,21 @@ window.render_hq_aireport = async function (page) {
         if (!data.ok) throw new Error(data.error || '生成失败');
         resEl.innerHTML = '<div class="card air-report-card"><div class="air-meta"><span class="air-badge air-badge-rule">仅预览·未推送</span><span>' + esc(date) + '</span></div>'
           + aiReportMd2html('## 异常预览\n' + data.ruleText) + '</div>';
-      } else {
+      } else { // __PATCHED_FORCE_CONFIRM__ [2026-07-12] 当天已推送过时二次确认，避免和9:30自动cron重复推送
         data = await api.post('/api/ai-report/run', { date });
         if (!data.ok) throw new Error(data.error || '生成失败');
+        if (data.skipped && data.alreadyPushed) {
+          const pushedTime = data.pushedAt ? new Date(data.pushedAt).toLocaleString('zh-CN') : '';
+          const wantForce = confirm('该日期（' + date + '）今天已经推送过一次决策群了（' + pushedTime + '）。\n\n是否仍要强制再推一次？（会在群里再发一条重复消息）');
+          if (wantForce) {
+            data = await api.post('/api/ai-report/run', { date, force: true });
+            if (!data.ok) throw new Error(data.error || '生成失败');
+          } else {
+            resEl.innerHTML = '<div class="card"><div style="color:#8a9099;">已取消，未重复推送（该日期今天已推送过）。</div></div>';
+            loadHistory();
+            return;
+          }
+        }
         resEl.innerHTML = '<div class="card air-report-card"><div class="air-meta">'
           + '<span class="air-badge ' + (data.aiUsed ? 'air-badge-ai">AI 分析' : 'air-badge-rule">规则版') + '</span>'
           + '<span class="air-badge ' + (data.pushOk ? 'air-badge-ok">已推送决策群' : 'air-badge-fail">未推送') + '</span>'

@@ -391,6 +391,14 @@ module.exports = function (app, db, deps) {
   // ============================================================
   async function generate(date, opt) {
     opt = opt || {};
+    // __PATCHED_DEDUPE_CHECK__ [2026-07-12] 当天已推送成功且未要求强制重推 -> 直接跳过，避免cron+手动点击重复推送
+    if (!opt.noPush && !opt.force) {
+      const existing = db.prepare('SELECT pushOk, pushedAt FROM shijing_ai_report WHERE date=?').get(date);
+      if (existing && existing.pushOk === 1) {
+        console.log('[ai-report]', date, 'already pushed at', new Date(existing.pushedAt).toISOString(), '- skip (use force to override)');
+        return { ok: true, skipped: true, alreadyPushed: true, pushedAt: existing.pushedAt };
+      }
+    }
     const th = getThreshold();
     const an = detectAnomalies(date, th);
     const ruleText = renderRuleText(an);
@@ -469,11 +477,12 @@ module.exports = function (app, db, deps) {
   // 7. 接口
   // ============================================================
   // 手动触发（hq）：可指定 date，可 noPush 仅生成
-  app.post('/api/ai-report/run', v6HQRequired, async (req, res) => {
+  app.post('/api/ai-report/run', v6HQRequired, async (req, res) => { // __PATCHED_RUN_FORCE__
     try {
       const date = (req.body && req.body.date) || fmtLocalDate(new Date(Date.now() - 86400000));
       const noPush = !!(req.body && req.body.noPush);
-      const r = await generate(date, { noPush });
+      const force = !!(req.body && req.body.force);
+      const r = await generate(date, { noPush, force });
       res.json(r);
     } catch (e) {
       res.json({ ok: false, error: e && e.message });
