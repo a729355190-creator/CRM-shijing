@@ -157,8 +157,14 @@ module.exports = function installOceanengineLocal(app, db, opts) {
 
   // ========= 路径2：线索明细接口，拿 真实留资数(=加粉数)，按天聚合条数 =========
   // POST /open_api/2/tools/clue/life/get/，local_account_ids 数组(<=50)+start_time/end_time(带时分秒)
+  // __PATCHED_CLUE_COUNT__ [2026-07-15] 同时统计留资数(byDay)和预付定金数(byDayDeposit)
+  // 预付定金判定：巨量线索明细字段 component_event_type_tags 数组包含 196
+  // （196 = 本地推深度转化"预付定金"节点，2026-07-15 实测账户1869842055860442验证：
+  //   7/10~7/14每天1-3条线索带196标签，与用户反馈"14号后台看到预付定金数"完全对应）
+  const OCL_DEPOSIT_TAG = 196;
   async function oclFetchClueCountByDay(accessToken, localAccountId, startDate, endDate) {
-    const byDay = {}; // date -> count
+    const byDay = {}; // date -> 留资总数
+    const byDayDeposit = {}; // date -> 预付定金数(高潜成交)
     let page = 1;
     const pageSize = 100;
     while (true) {
@@ -176,16 +182,22 @@ module.exports = function installOceanengineLocal(app, db, opts) {
         const date = t.slice(0, 10);
         if (!date) continue;
         byDay[date] = (byDay[date] || 0) + 1;
+        const tags = item.component_event_type_tags || [];
+        if (tags.includes(OCL_DEPOSIT_TAG)) {
+          byDayDeposit[date] = (byDayDeposit[date] || 0) + 1;
+        }
       }
       const pi = r.data.page_info;
       if (!pi || page >= pi.page_total || !list.length) break;
       page++;
       await new Promise(res2 => setTimeout(res2, 80));
     }
-    return byDay;
+    return { byDay, byDayDeposit };
   }
 
-  function oclWriteAdRecords(accId, accName, reportRows, clueByDay) {
+  function oclWriteAdRecords(accId, accName, reportRows, clueResult) { // __PATCHED_WRITE_SIG__
+    const clueByDay = (clueResult && clueResult.byDay) || {};
+    const clueByDayDeposit = (clueResult && clueResult.byDayDeposit) || {};
     let written = 0, updated = 0;
     const now = Date.now();
     const upsert = db.prepare(`INSERT INTO shijing_ad(id, data, deleted) VALUES(?, ?, 0)
@@ -200,6 +212,7 @@ module.exports = function installOceanengineLocal(app, db, opts) {
       byDate[date] = { cost: +row.stat_cost || 0, impressions: +row.show_cnt || 0, clicks: +row.click_cnt || 0 };
     }
     for (const date of Object.keys(clueByDay || {})) dateSet.add(date);
+    for (const date of Object.keys(clueByDayDeposit || {})) dateSet.add(date); // __PATCHED_DATESET_DEPOSIT__
 
     for (const date of dateSet) {
       const r = byDate[date] || { cost: 0, impressions: 0, clicks: 0 };
@@ -215,7 +228,7 @@ module.exports = function installOceanengineLocal(app, db, opts) {
         mediaChannel: 'oceanengine_local',
         cost: r.cost,
         addFans,
-        deepConvert: 0, // 预付定金数：巨量原生接口拿不到（需商家主动回传clue_convert_state才有），暂存0，前端需标注"待回传"不能当真实0展示
+        deepConvert: (clueByDayDeposit && clueByDayDeposit[date]) || 0, // __PATCHED_DEEPCONVERT__ [2026-07-15] 预付定金数=线索明细component_event_type_tags含196(预付定金节点)的条目数，实测有效
         impressions: r.impressions,
         clicks: r.clicks,
         syncedAt: now,
@@ -246,9 +259,9 @@ module.exports = function installOceanengineLocal(app, db, opts) {
       try {
         const rpt = await oclFetchReport(tok.accessToken, acc.accountId, startDate, endDate);
         const reportRows = (rpt && rpt.code === 0 && rpt.data && rpt.data.data_list) || [];
-        const clueByDay = await oclFetchClueCountByDay(tok.accessToken, acc.accountId, startDate, endDate);
-        if (reportRows.length || Object.keys(clueByDay).length) {
-          const w = oclWriteAdRecords(acc.accountId, acc.accountName, reportRows, clueByDay);
+        const clueResult = await oclFetchClueCountByDay(tok.accessToken, acc.accountId, startDate, endDate); // __PATCHED_CALL__
+        if (reportRows.length || Object.keys(clueResult.byDay).length) {
+          const w = oclWriteAdRecords(acc.accountId, acc.accountName, reportRows, clueResult);
           summary.written += w.written; summary.updated += w.updated;
         }
         if (rpt && rpt.code !== 0) summary.errors.push({ acc: acc.accountId, phase: 'report', err: rpt.message });
