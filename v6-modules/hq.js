@@ -632,7 +632,8 @@ window.render_hq_cs_perf = async function (page) {
     return {
       name, fans, dep, amount, invited, arrived,
       depRate: fans > 0 ? (dep / fans * 100).toFixed(1) : null,
-      arriveRate: invited > 0 ? (arrived / invited * 100).toFixed(1) : null,
+      // 到店率 = 已到店 / 加粉数（2026-07-15 修正：原先误写成 已到店/排客数）
+      arriveRate: fans > 0 ? (arrived / fans * 100).toFixed(1) : null,
       depArrRate: dep > 0 ? (arrived / dep * 100).toFixed(1) : null,
     };
   }
@@ -678,7 +679,7 @@ window.render_hq_cs_perf = async function (page) {
         <thead><tr><th>排名</th><th>团队 / 客服</th><th style="text-align:right">加粉数</th><th style="text-align:right">定金数</th><th style="text-align:right">排客数</th><th style="text-align:right">已到店</th><th style="text-align:right">定金率</th><th style="text-align:right">到店率</th><th style="text-align:right">定金到店率</th><th style="text-align:right">定金金额</th></tr></thead>
         <tbody>${bodyHtml || '<tr><td colspan="10" class="muted" style="text-align:center;padding:24px">暂无数据</td></tr>'}</tbody>
       </table></div>
-      <p class="muted" style="margin-top:8px;font-size:11px">点击蓝色团队行可展开该团队下的客服个人明细。到店率 = 已到店 / 排客数；定金到店率 = 已到店 / 定金数（允许 >100%）。</p>
+      <p class="muted" style="margin-top:8px;font-size:11px">点击蓝色团队行可展开该团队下的客服个人明细。到店率 = 已到店 / 加粉数；定金到店率 = 已到店 / 定金数（允许 >100%）。</p>
     `;
     // 展开/收起
     div.querySelectorAll('.cs-team-row').forEach(tr => {

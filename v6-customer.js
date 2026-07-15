@@ -738,9 +738,13 @@ module.exports = function (app, db, deps) {
           for (const ct of c.csTeams) {
             arriveByTeam[ct] = (arriveByTeam[ct] || 0) + 1;
           }
+          // 2026-07-15 修复：营业额此前用 c.ltv（客户全生命周期累计营业额，与 days 窗口无关），
+          // 导致无论选7天/30天，营业额都是同一个"全历史总额"，和到店数/加粉数窗口完全不匹配。
+          // 现改为只累加窗口内(dateSet)这条到店事件自身的 revenue，与 arriveByTeam 口径统一。
+          for (const ct of c.csTeams) {
+            revByTeam[ct] = (revByTeam[ct] || 0) + (+e.revenue || 0);
+          }
         }
-        // 营业额按客服团队（一个客户可能多团队，简单各计；hq 用）
-        for (const ct of c.csTeams) revByTeam[ct] = (revByTeam[ct] || 0) + c.ltv;
       }
 
       // 组装：按团队聚合该团队所有客服个人的加粉/删粉，定金/到店/营业额取团队级

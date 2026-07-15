@@ -2035,7 +2035,10 @@ app.get('/api/oceanengine/by-city', v6Required, (req, res) => {
   const byCity = {};
   for (const r of cityRows) {
     const city = r.cityName;
-    if (!byCity[city]) byCity[city] = { city, cost: 0, addFans: 0, deepConvert: 0, clicks: 0, impressions: 0 };
+    // 2026-07-15 修复：这里必须带上 arrivedCount:0，否则下面店铺新客到店数据
+    // 对这些已存在的城市对象做 arrivedCount++ 时会是 undefined++ => NaN，
+    // 前端兜底显示成 0，导致"到店数一直是0/到店成本一直是-"。
+    if (!byCity[city]) byCity[city] = { city, cost: 0, addFans: 0, deepConvert: 0, clicks: 0, impressions: 0, arrivedCount: 0 };
     byCity[city].cost += +r.cost || 0;
     byCity[city].addFans += +r.addFans || 0;
     byCity[city].deepConvert += +r.deepConvert || 0;
