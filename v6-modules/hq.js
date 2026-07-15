@@ -132,6 +132,7 @@ window.render_hq_data = async function (page) {
       </div>
     </div>
 
+    <div id="platform_zone"></div>
     <div id="city_zone"></div>
   `;
 
@@ -210,8 +211,54 @@ window.render_hq_data = async function (page) {
   }));
 
   // 城市
+  fillPlatformZone(document.getElementById('platform_zone'), start, end);
   fillCityZone(document.getElementById('city_zone'), start, end, '城市维度（消耗/营业额/ROI）');
 };
+
+// 平台投产对比（巨量AD / 巨量本地推 / 腾讯ADQ）[2026-07-15新增]
+async function fillPlatformZone(container, s, e) {
+  if (!container) return;
+  container.innerHTML = '<div class="card"><h3>📡 平台投产对比</h3><div class="loading">加载中...</div></div>';
+  try {
+    const r = await fetch('/api/oceanengine/by-platform?start=' + s + '&end=' + e).then(r => r.json());
+    const platforms = (r.platforms || []).filter(p => p.cost >= 1);
+    if (platforms.length === 0) {
+      container.innerHTML = '<div class="card"><h3>📡 平台投产对比</h3><p class="muted">该区间内暂无平台数据</p></div>';
+      return;
+    }
+    const totalCost = platforms.reduce((s, p) => s + p.cost, 0);
+    container.innerHTML = `
+      <div class="card">
+        <h3>📡 平台投产对比
+          <span style="font-size:12px;color:var(--ink-mute);font-weight:400;margin-left:12px">
+            ${platforms.length} 个平台 · 总消耗 ${fmtMoney(totalCost)}
+          </span>
+        </h3>
+        <div class="table-wrap"><table>
+          <thead><tr>
+            <th>平台</th><th style="text-align:right">消耗</th><th style="text-align:right">占比</th>
+            <th style="text-align:right">加粉</th><th style="text-align:right">加粉成本</th>
+            <th style="text-align:right">高潜成交</th><th style="text-align:right">高潜成本</th>
+            <th style="text-align:right">营业额（估算）</th><th style="text-align:right">ROI（估算）</th>
+          </tr></thead>
+          <tbody>${platforms.map(p => `<tr>
+              <td><b>${esc(p.label)}</b></td>
+              <td style="text-align:right">${fmtMoney(p.cost)}</td>
+              <td style="text-align:right">${(p.cost / totalCost * 100).toFixed(1)}%</td>
+              <td style="text-align:right">${p.addFans}</td>
+              <td style="text-align:right">${p.addFans > 0 ? fmtMoney(p.costPerFan) : '-'}</td>
+              <td style="text-align:right;color:var(--klein)">${p.deepConvert}</td>
+              <td style="text-align:right">${p.deepConvert > 0 ? fmtMoney(p.deepCost) : '-'}</td>
+              <td style="text-align:right;color:var(--danger)">${p.revenue != null ? fmtMoney(p.revenue) : '-'}</td>
+              <td style="text-align:right;color:var(--klein);font-weight:600">${p.roi != null ? p.roi.toFixed(2) + '×' : '-'}</td>
+            </tr>`).join('')}</tbody>
+        </table></div>
+        <p class="muted" style="font-size:11px;margin-top:8px">说明：营业额/ROI为估算值——按各平台消耗占比对区间总营业额进行分摊，因store表未记录客户来源平台，暂无法精确到平台归因（打通投手/平台归因后可升级为精确值）。</p>
+      </div>`;
+  } catch (e) {
+    container.innerHTML = '<div class="card"><p style="color:var(--danger)">加载失败：' + e.message + '</p></div>';
+  }
+}
 
 window.setHQDbPreset = (p) => { window.__hqDbFilter = { preset: p, from: '', to: '' }; render_hq_data(document.getElementById('page')); };
 window.applyHQDbCustom = () => {

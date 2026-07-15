@@ -119,6 +119,8 @@ function getAccountOwnerMap() {
   const map = new Map();
   for (const a of (oe.subAccounts || [])) map.set(String(a.accountId), a.ownerTeamId || null);
   for (const a of (oe.localAccounts || [])) map.set(String(a.accountId), a.ownerTeamId || null);
+  // 2026-07-15：腾讯ADQ账户也纳入同一套认领归属机制
+  for (const a of ((cfg.adq && cfg.adq.accounts) || [])) map.set(String(a.accountId), a.ownerTeamId || null);
   return map;
 }
 
@@ -130,6 +132,13 @@ function filterAdRowsByOwnership(rows, user) {
     if (r.ocAccountId) {
       // 自动同步的巨量AD/本地推记录：按账户认领归属判断，未认领或被别的团队认领都不可见
       const ownerTeamId = ownerMap.get(String(r.ocAccountId));
+      return ownerTeamId === user.teamId;
+    }
+    // 2026-07-15：腾讯ADQ记录 mediaChannel==='adq'，teamId 格式是 'adq_<accountId>'，
+    // 从 teamId 反推 accountId 去查同一张认领归属地图（跟巨量账户走同一套机制）
+    if (r.mediaChannel === 'adq' && typeof r.teamId === 'string' && r.teamId.indexOf('adq_') === 0) {
+      const accId = r.teamId.slice(4);
+      const ownerTeamId = ownerMap.get(String(accId));
       return ownerTeamId === user.teamId;
     }
     // 手动录入/历史导入等非账户类记录：按人工团队ID精确匹配（原有逻辑）
@@ -1939,7 +1948,7 @@ app.get('/api/oceanengine/accounts/claimable', v6Required, (req, res) => {
   const pick = (a, type) => ({
     accountId: a.accountId,
     accountName: a.accountName,
-    accountType: type, // 'AD' | 'LOCAL'
+    accountType: type, // 'AD' | 'LOCAL' | 'ADQ'
     ownerId: a.ownerId || null,
     ownerName: a.ownerName || null,
     ownerTeamId: a.ownerTeamId || null,
@@ -1949,7 +1958,9 @@ app.get('/api/oceanengine/accounts/claimable', v6Required, (req, res) => {
   const visible = a => !a.ownerTeamId || a.ownerTeamId === user.teamId; // 未认领 或 本团队已认领 才可见
   const adAccounts = (oe.subAccounts || []).filter(visible).map(a => pick(a, 'AD'));
   const localAccounts = (oe.localAccounts || []).filter(visible).map(a => pick(a, 'LOCAL'));
-  res.json({ ok: true, adAccounts, localAccounts });
+  // 2026-07-15：腾讯ADQ账户接入同一套认领机制
+  const adqAccounts = ((cfg.adq && cfg.adq.accounts) || []).filter(visible).map(a => pick(a, 'ADQ'));
+  res.json({ ok: true, adAccounts, localAccounts, adqAccounts });
 });
 
 // 认领：唯一归属+立即生效。传 { items: [{accountId, accountType}] }，accountType='AD'|'LOCAL'
@@ -1962,11 +1973,14 @@ app.post('/api/oceanengine/accounts/claim', v6Required, (req, res) => {
   cfg.oceanengine = cfg.oceanengine || {};
   cfg.oceanengine.subAccounts = cfg.oceanengine.subAccounts || [];
   cfg.oceanengine.localAccounts = cfg.oceanengine.localAccounts || [];
+  cfg.adq = cfg.adq || {};
+  cfg.adq.accounts = cfg.adq.accounts || [];
   const now = Date.now();
   const conflicts = [];
   const claimedNames = [];
+  const pickList = (t) => t === 'LOCAL' ? cfg.oceanengine.localAccounts : (t === 'ADQ' ? cfg.adq.accounts : cfg.oceanengine.subAccounts);
   for (const it of items) {
-    const list = it.accountType === 'LOCAL' ? cfg.oceanengine.localAccounts : cfg.oceanengine.subAccounts;
+    const list = pickList(it.accountType);
     const acc = list.find(a => String(a.accountId) === String(it.accountId));
     if (!acc) { conflicts.push({ accountId: it.accountId, error: '账户不存在' }); continue; }
     if (acc.ownerTeamId && acc.ownerTeamId !== user.teamId) {
@@ -1993,9 +2007,12 @@ app.post('/api/oceanengine/accounts/unclaim', v6Required, (req, res) => {
   cfg.oceanengine = cfg.oceanengine || {};
   cfg.oceanengine.subAccounts = cfg.oceanengine.subAccounts || [];
   cfg.oceanengine.localAccounts = cfg.oceanengine.localAccounts || [];
+  cfg.adq = cfg.adq || {};
+  cfg.adq.accounts = cfg.adq.accounts || [];
   let unclaimed = 0;
+  const pickList = (t) => t === 'LOCAL' ? cfg.oceanengine.localAccounts : (t === 'ADQ' ? cfg.adq.accounts : cfg.oceanengine.subAccounts);
   for (const it of items) {
-    const list = it.accountType === 'LOCAL' ? cfg.oceanengine.localAccounts : cfg.oceanengine.subAccounts;
+    const list = pickList(it.accountType);
     const acc = list.find(a => String(a.accountId) === String(it.accountId));
     if (!acc) continue;
     if (acc.ownerTeamId !== user.teamId) continue; // 只能取消本团队认领的
@@ -2017,13 +2034,15 @@ app.get('/api/oceanengine/accounts/ownership-overview', v6HQRequired, (req, res)
   });
   const adAccounts = (oe.subAccounts || []).map(a => pick(a, 'AD'));
   const localAccounts = (oe.localAccounts || []).map(a => pick(a, 'LOCAL'));
-  const all = [...adAccounts, ...localAccounts];
+  // 2026-07-15：腾讯ADQ账户纳入认领总览
+  const adqAccounts = ((cfg.adq && cfg.adq.accounts) || []).map(a => pick(a, 'ADQ'));
+  const all = [...adAccounts, ...localAccounts, ...adqAccounts];
   res.json({
     ok: true,
     total: all.length,
     claimed: all.filter(a => a.ownerTeamId).length,
     unclaimed: all.filter(a => !a.ownerTeamId).length,
-    adAccounts, localAccounts,
+    adAccounts, localAccounts, adqAccounts,
   });
 });
 
@@ -2099,6 +2118,66 @@ app.get('/api/oceanengine/by-city', v6Required, (req, res) => {
   })).sort((a, b) => b.cost - a.cost);
   res.json({ ok: true, cities, totalCities: cities.length });
 });
+// API：按平台投产对比看板数据 [2026-07-15新增]
+// 三平台横向对比：巨量AD(oceanengine) / 巨量本地推(oceanengine_local) / 腾讯ADQ(adq)
+// 营业额无法直接按平台归属(store表不记录客户来源平台)，采用与城市维度同样的"按消耗权重分摊"
+// 方法：区间内总营业额，按各平台消耗占比分摊到平台上，得到可横向对比的平台级ROI(参考值，非精确值)。
+app.get('/api/oceanengine/by-platform', v6Required, (req, res) => {
+  const { start, end } = req.query || {};
+  const user = req.v6User;
+  if (user.role !== 'hq' && user.role !== 'ad') {
+    return res.json({ ok: true, platforms: [] });
+  }
+  const adAll = db.prepare('SELECT data FROM shijing_ad WHERE deleted=0').all().map(r => JSON.parse(r.data));
+  const all = filterAdRowsByOwnership(adAll, user);
+  const PLATFORM_LABEL = { oceanengine: '巨量AD', oceanengine_local: '巨量本地推', adq: '腾讯ADQ' };
+  // 天维度记录：oceanengine/oceanengine_local 用 !cityName 排重(同一天有天维度+城市维度两份)；
+  // adq 记录本身就是天维度(mediaChannel==='adq'时teamId='adq_<accountId>'，无cityName字段)
+  const rows = all.filter(x => {
+    if (!PLATFORM_LABEL[x.mediaChannel]) return false;
+    if (x.mediaChannel !== 'adq' && x.cityName) return false; // 排掉城市维度重复记录
+    if (start && x.date < start) return false;
+    if (end && x.date > end) return false;
+    return true;
+  });
+  const byPlatform = {};
+  for (const r of rows) {
+    const p = r.mediaChannel;
+    if (!byPlatform[p]) byPlatform[p] = { platform: p, label: PLATFORM_LABEL[p], cost: 0, addFans: 0, deepConvert: 0, clicks: 0, impressions: 0 };
+    byPlatform[p].cost += +r.cost || 0;
+    byPlatform[p].addFans += +r.addFans || 0;
+    byPlatform[p].deepConvert += +r.deepConvert || 0;
+    byPlatform[p].clicks += +r.clicks || 0;
+    byPlatform[p].impressions += +r.impressions || 0;
+  }
+  const totalCost = Object.values(byPlatform).reduce((s, p) => s + p.cost, 0);
+
+  // 区间总营业额(仅HQ视角有意义；ad角色看不到营业额，revenue/roi字段为null)
+  let totalRevenue = null;
+  if (user.role === 'hq') {
+    const storeAll = db.prepare('SELECT data FROM shijing_store WHERE deleted=0').all().map(r => JSON.parse(r.data));
+    totalRevenue = storeAll.filter(x => {
+      if (start && x.date < start) return false;
+      if (end && x.date > end) return false;
+      return true;
+    }).reduce((s, x) => s + (+x.opAmount || 0) + (+x.closedAmount || 0), 0);
+  }
+
+  const platforms = Object.values(byPlatform).map(p => {
+    const revenue = totalRevenue !== null && totalCost > 0 ? +(totalRevenue * (p.cost / totalCost)).toFixed(2) : null;
+    return {
+      ...p,
+      cpc: p.clicks > 0 ? +(p.cost / p.clicks).toFixed(2) : 0,
+      costPerFan: p.addFans > 0 ? +(p.cost / p.addFans).toFixed(2) : 0,
+      deepCost: p.deepConvert > 0 ? +(p.cost / p.deepConvert).toFixed(2) : 0,
+      revenue,
+      roi: revenue !== null && p.cost > 0 ? +(revenue / p.cost).toFixed(2) : null,
+    };
+  }).sort((a, b) => b.cost - a.cost);
+
+  res.json({ ok: true, platforms, totalCost: +totalCost.toFixed(2), totalRevenue, revenueIsEstimated: true });
+});
+
 
 // ========== 巨量数据同步 cron（双时点策略）==========
 // 8:00 第一次拉：抢早，至少把天维度数据拉到，让看板能看

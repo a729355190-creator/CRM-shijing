@@ -1133,7 +1133,7 @@ window.render_ad_claim = async function (page) {
 };
 
 function renderAdClaimPage(page) {
-  const { adAccounts = [], localAccounts = [] } = window.__adClaimData || {};
+  const { adAccounts = [], localAccounts = [], adqAccounts = [] } = window.__adClaimData || {};
   const sel = window.__adClaimState.selected;
 
   const rowHtml = (a) => {
@@ -1177,6 +1177,14 @@ function renderAdClaimPage(page) {
       <div class="table-wrap"><table>
         <thead><tr><th></th><th>账户名</th><th>账户ID</th><th>状态</th><th>认领时间</th></tr></thead>
         <tbody>${localAccounts.map(rowHtml).join('') || '<tr><td colspan="5" class="muted" style="text-align:center;padding:24px">暂无可见账户</td></tr>'}</tbody>
+      </table></div>
+    </div>
+
+    <div class="card">
+      <h3>🎯 腾讯ADQ账户（${adqAccounts.length}）</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th></th><th>账户名</th><th>账户ID</th><th>状态</th><th>认领时间</th></tr></thead>
+        <tbody>${adqAccounts.map(rowHtml).join('') || '<tr><td colspan="5" class="muted" style="text-align:center;padding:24px">暂无可见账户</td></tr>'}</tbody>
       </table></div>
     </div>
   `;
