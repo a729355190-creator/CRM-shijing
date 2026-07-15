@@ -729,19 +729,23 @@ window.render_ad_channels = async function(page) {
         </div>
       `;
     }
-  } else {
-    body.innerHTML = `
-      <div class="card">
-        <h3>💬 腾讯 ADQ</h3>
-        <p class="muted">微信朋友圈、视频号、QQ 等腾讯系投放。腾讯营销 API（marketing-api.qq.com）需独立授权和 access_token。</p>
-        <div class="kpi-grid">
-          <div class="kpi"><div class="kpi-label">本月消耗</div><div class="kpi-value muted">待授权</div></div>
-          <div class="kpi"><div class="kpi-label">加粉</div><div class="kpi-value muted">待授权</div></div>
-          <div class="kpi"><div class="kpi-label">高潜</div><div class="kpi-value muted">待授权</div></div>
+  } else { // __PATCHED_ADQ_FRONTEND__ [2026-07-15] ADQ已接入真实数据
+    const adqData = (DB.ad || []).filter(x => x.date >= start && x.date <= end && x.mediaChannel === 'adq');
+    if (adqData.length) {
+      body.innerHTML = renderChannelTable('腾讯 ADQ', adqData, { deepLabel: '转化数' });
+    } else {
+      body.innerHTML = `
+        <div class="card">
+          <h3>💬 腾讯 ADQ</h3>
+          <p class="muted">该时间段暂无消耗数据。</p>
+          <div class="kpi-grid">
+            <div class="kpi"><div class="kpi-label">本月消耗</div><div class="kpi-value muted">¥0</div></div>
+            <div class="kpi"><div class="kpi-label">曝光</div><div class="kpi-value muted">0</div></div>
+            <div class="kpi"><div class="kpi-label">转化</div><div class="kpi-value muted">-</div></div>
+          </div>
         </div>
-        <p class="muted" style="font-size:11px;margin-top:12px">📌 接口口子已留：POST /api/v6/adq/sync 待对接。需要：① 申请腾讯营销 API 应用 ② 用户授权 OAuth ③ 复用 ad 表 mediaChannel='adq'。</p>
-      </div>
-    `;
+      `;
+    }
   }
 
   function renderChannelTable(title, data, opts) {

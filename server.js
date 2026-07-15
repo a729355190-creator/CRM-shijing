@@ -198,6 +198,12 @@ v6AppRoutes(app, db);
 v6Creatives(app, db, { ocGetValidToken, getConfig });
 require("./v6-uploads")(app, db);
 require("./v6-oceanengine-local")(app, db, { getConfig, setConfig, pushWecom, cron, v6HQRequired });
+// __PATCHED_MOUNT_ADQ__ [2026-07-15] 腾讯广告(ADQ)对接，插件式挂载，异常不影响主流程
+try {
+  require('./v6-adq')(app, db, { getConfig, setConfig, pushWecom, cron, v6HQRequired });
+} catch (e) {
+  console.error('[v6-adq] mount failed:', e && e.message);
+}
 v6Scripts(app, db);
 app.use(express.static(path.join(ROOT, 'public')));
 
