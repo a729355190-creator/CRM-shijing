@@ -159,6 +159,7 @@ module.exports = function (app, db, deps) {
           external_userid: c.external_userid,
           name: c.name, real_name: c.real_name, phone: c.phone, avatar: c.avatar,
           source_city: c.source_city, stage: c.stage, store_id: c.store_id,
+          attribution_channel: c.attribution_channel, attribution_state: c.attribution_state,
           follow_userid: c.follow_userid, follow_name: followName,
           tags: c.tags, remark: c.remark, add_time: c.add_time, lost: c.lost,
         },

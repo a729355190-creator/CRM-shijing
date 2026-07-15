@@ -258,6 +258,7 @@
               ${c.phone ? '📱 ' + esc(c.phone) + '　' : ''}${c.source_city ? '📍 ' + esc(c.source_city) + '　' : ''}${c.follow_name ? '客服：' + esc(c.follow_name) : ''}
             </div>
             ${c.name && c.real_name ? `<div style="font-size:12px;color:#8a9099;margin-top:2px;">企微昵称：${esc(c.name)}</div>` : ''}
+            ${c.attribution_channel ? `<div style="font-size:12px;color:#3370ff;margin-top:2px;">🎯 投放归因：${esc(c.attribution_channel)}</div>` : ''}
           </div>
           <div style="margin-left:auto;text-align:right;">
             <div style="font-size:12px;color:#8a9099;">累计成交</div>

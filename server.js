@@ -389,6 +389,30 @@ app.post('/api/add', v6Required, (req, res) => {
     }
 
     db.prepare(`INSERT INTO shijing_${col}(id, data) VALUES(?, ?)`).run(record.id, JSON.stringify(record));
+
+    // ===== 打通投手归因：客服排客选中企微好友时，反查该好友身上的投放归因 =====
+    // [2026-07-15新增] 归因数据挂在 shijing_wecom_customers.attribution_channel/state 上
+    // （由获客链接 customer_channel 参数经企微回传解码后写入，见后续同步任务）。
+    // 这里只做"读取+快照"：把当时查到的归因存进 shijing_invite_attribution，
+    // 与这一笔具体邀约永久关联（即使日后客户主档的归因被覆盖，这笔邀约的归因仍可追溯）。
+    // 不影响 invite 记录本身的结构，失败也不影响主流程（降级：没有归因就不记）。
+    if (col === 'invite' && record.external_userid) {
+      try {
+        const custRow = db.prepare(
+          'SELECT attribution_channel, attribution_state FROM shijing_wecom_customers WHERE external_userid=?'
+        ).get(record.external_userid);
+        if (custRow && (custRow.attribution_channel || custRow.attribution_state)) {
+          db.prepare(`INSERT OR REPLACE INTO shijing_invite_attribution
+            (invite_id, external_userid, attribution_channel, attribution_state, createdAt)
+            VALUES (?,?,?,?,?)`).run(
+            record.id, record.external_userid, custRow.attribution_channel || '', custRow.attribution_state || '', Date.now()
+          );
+        }
+      } catch (e) {
+        console.error('[invite-attribution] error:', e.message);
+      }
+    }
+
     res.json({ ok: true });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
