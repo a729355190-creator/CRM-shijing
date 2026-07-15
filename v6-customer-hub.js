@@ -103,6 +103,8 @@ module.exports = function (app, db, deps) {
 
       let all = db.prepare('SELECT external_userid, name, real_name, phone, avatar, follow_userid, source_city, stage, store_id, add_time, lost FROM shijing_wecom_customers').all();
       all = applyScope(all, scope);
+      // 2026-07-15：投放归因(来源城市/账户/平台)只对总部可见，避免客服/门店拿着来源信息去跨渠道调客户
+      if (user.role !== 'hq') all = all.map(c => ({ ...c, source_city: undefined }));
 
       if (kw) {
         const k = kw.toLowerCase();
@@ -153,13 +155,19 @@ module.exports = function (app, db, deps) {
         if (s) followName = s.name;
       } catch {}
 
+      // 2026-07-15：投放归因(来源城市/投放渠道)是敏感信息，只对总部可见——
+      // 客服/门店如果能看到"这个客户是哪个投手/哪个账户带来的"，可能被用来跨渠道私下联系客户
+      // 抢别的投手/账户的业绩，必须只在HQ视角暴露，cs/store视角这几个字段一律置null。
+      const isHQ = user.role === 'hq';
       res.json({
         ok: true,
         customer: {
           external_userid: c.external_userid,
           name: c.name, real_name: c.real_name, phone: c.phone, avatar: c.avatar,
-          source_city: c.source_city, stage: c.stage, store_id: c.store_id,
-          attribution_channel: c.attribution_channel, attribution_state: c.attribution_state,
+          source_city: isHQ ? c.source_city : null,
+          stage: c.stage, store_id: c.store_id,
+          attribution_channel: isHQ ? c.attribution_channel : null,
+          attribution_state: isHQ ? c.attribution_state : null,
           follow_userid: c.follow_userid, follow_name: followName,
           tags: c.tags, remark: c.remark, add_time: c.add_time, lost: c.lost,
         },
