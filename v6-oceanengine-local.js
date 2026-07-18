@@ -129,6 +129,13 @@ module.exports = function installOceanengineLocal(app, db, opts) {
     const cfg = getConfig() || {};
     cfg.oceanengine = cfg.oceanengine || {};
     const old = cfg.oceanengine.localAccounts || [];
+    // 2026-07-18修复：接口偶发返回空列表(非报错，只是拿到0条)时，绝不能用空数组覆盖现有配置——
+    // 之前的写法一旦命中这种情况，会把已有的22个账户瞬间清空并落库，当天同步循环因"无账户"
+    // 直接空转但仍标记ok:true，日志上完全看不出异常，实测导致7/15、7/17两天消耗数据永久丢失。
+    // 现改为：接口返回空但现有缓存非空 → 视为疑似临时故障，不覆盖，明确返回失败信号。
+    if (list.length === 0 && old.length > 0) {
+      return { ok: false, error: '账户列表接口返回0条，但本地缓存有' + old.length + '个账户，疑似接口临时故障，本次不覆盖配置', keptOld: old.length };
+    }
     const oldMap = new Map(old.map(a => [String(a.accountId), a]));
     const merged = list.map(a => {
       const id = String(a.account_id);
@@ -247,12 +254,27 @@ module.exports = function installOceanengineLocal(app, db, opts) {
     let accounts = (cfg.oceanengine && cfg.oceanengine.localAccounts) || [];
     // 每次同步前都先刷新一遍账户列表（而非仅在缓存为空时才刷新），
     // 这样以后新开通的本地推账户会被自动纳入同步范围，不需要人工手动点"刷新账户"。
-    // 刷新失败（如接口临时报错）时降级使用上次缓存的账户列表，保证当天同步不中断。
+    // 刷新失败（如接口临时报错，或2026-07-18新增的"返回空列表疑似故障"判断）时
+    // 降级使用上次缓存的账户列表，保证当天同步不中断。
     const refreshed = await syncLocalAccountList();
     if (refreshed.ok) {
       accounts = refreshed.accounts;
     } else if (!accounts.length) {
       return { ok: false, error: refreshed.error };
+    }
+    // 2026-07-18修复：账户数为0是明确的异常状态，不能悄悄跳过还标记ok:true——
+    // 之前就是这里的静默让7/15、7/17的数据丢失了整整3天才被发现。
+    if (accounts.length === 0) {
+      const errMsg = '本地推账户列表为空，本次同步未拉取任何数据' + (refreshed.error ? '（' + refreshed.error + '）' : '');
+      const summary0 = { startDate, endDate, accounts: 0, written: 0, updated: 0, errors: [{ err: errMsg }], ok: false, finishedAt: Date.now() };
+      cfg.oceanengine = cfg.oceanengine || {};
+      cfg.oceanengine.localLastSync = summary0;
+      setConfig(cfg);
+      try {
+        const wh = (cfg.wecomConfig && cfg.wecomConfig.hqWebhook) || '';
+        if (wh && pushWecom) await pushWecom(wh, '## ⚠️ 本地推同步异常\n> ' + errMsg + '\n> 日期：' + startDate + ' ~ ' + endDate);
+      } catch (e) { console.error('[oc-local] alert push failed', e.message); }
+      return summary0;
     }
     const summary = { startDate, endDate, accounts: accounts.length, written: 0, updated: 0, errors: [] };
     for (const acc of accounts) {
@@ -275,6 +297,15 @@ module.exports = function installOceanengineLocal(app, db, opts) {
     cfg.oceanengine = cfg.oceanengine || {};
     cfg.oceanengine.localLastSync = summary;
     setConfig(cfg);
+    // 2026-07-18新增：本次同步写入0条(消耗全为0/接口全部报错等异常情况)时推HQ告警，
+    // 避免像7/15、7/17那样悄悄丢数据好几天没人发现。
+    if (summary.written === 0 && summary.updated === 0) {
+      try {
+        const wh = (cfg.wecomConfig && cfg.wecomConfig.hqWebhook) || '';
+        const errBrief = summary.errors.length ? summary.errors.slice(0, 3).map(e => (e.acc || '') + ':' + (e.err || e.phase || '')).join('；') : '无明确报错，但0条数据写入';
+        if (wh && pushWecom) await pushWecom(wh, '## ⚠️ 本地推同步疑似异常\n> 日期：' + startDate + ' ~ ' + endDate + '\n> 账户数：' + accounts.length + '，写入0条\n> ' + errBrief);
+      } catch (e) { console.error('[oc-local] alert push failed', e.message); }
+    }
     return summary;
   }
 
