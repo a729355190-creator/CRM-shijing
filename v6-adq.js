@@ -141,6 +141,94 @@ module.exports = function installAdq(app, db, opts) {
     return await adqHttpsGet('/v3.0/daily_reports/get?' + params);
   }
 
+  // ========= 城市维度同步 [2026-07-18新增] =========
+  // 【实测结论】
+  //   - 接口：GET /v3.0/targeting_tag_reports/get，type='CITY'，level='ADVERTISER'
+  //     （注意level枚举跟daily_reports/get不同，这里是裸的'ADVERTISER'不是'REPORT_LEVEL_ADVERTISER'）
+  //   - group_by=['date','city_id'] 支持一次性传整个日期区间，直接返回按天+按城市分组的数据，
+  //     不需要像本地推那样逐日单独调用。实测账户84238806的7/16：城市维度求和138.14(分转元)，
+  //     与天维度记录cost=138.14完全吻合。
+  //   - 返回的city_id是数字编码(如430100)，没有city名称字段，需要另调
+  //     GET /v3.0/targeting_tags/get，type='REGION'（不是'CITY'，这个接口type枚举又不同）
+  //     拉全量行政区划码表(3522条，实测id->name如430100->"长沙市")做本地映射。
+  //     这是静态数据几乎不会变，缓存到cfg.adq.regionMap，避免每次同步都重新拉。
+  const ADQ_REGION_CACHE_TTL = 30 * 86400000; // 30天刷新一次即可
+  async function getAdqRegionMap(accessToken, accountId) {
+    const cfg = getAdqCfg();
+    const cache = cfg.adq.regionMap;
+    if (cache && cache.map && Date.now() - cache.updatedAt < ADQ_REGION_CACHE_TTL) {
+      return cache.map;
+    }
+    const params = querystring.stringify({
+      access_token: accessToken, timestamp: ts(), nonce: nonce(),
+      account_id: accountId,
+      type: 'REGION',
+      tag_spec: JSON.stringify({}),
+    });
+    const r = await adqHttpsGet('/v3.0/targeting_tags/get?' + params);
+    if (!r || r.code !== 0 || !r.data || !r.data.list) return cache ? cache.map : {};
+    const map = {};
+    for (const item of r.data.list) map[item.id] = item.name;
+    const latestCfg = getAdqCfg();
+    latestCfg.adq.regionMap = { map, updatedAt: Date.now() };
+    setConfig(latestCfg);
+    return map;
+  }
+
+  function normalizeCnCityAdq(name) {
+    if (!name) return name;
+    return String(name).replace(/(市|自治州|地区|盟)$/, '');
+  }
+
+  const ADQ_CITY_REPORT_FIELDS = ['date', 'city_id', 'cost', 'view_count', 'valid_click_count'];
+  async function fetchCityReport(accessToken, accountId, startDate, endDate) {
+    const params = querystring.stringify({
+      access_token: accessToken, timestamp: ts(), nonce: nonce(),
+      account_id: accountId,
+      type: 'CITY',
+      level: 'ADVERTISER',
+      date_range: JSON.stringify({ start_date: startDate, end_date: endDate }),
+      group_by: JSON.stringify(['date', 'city_id']),
+      fields: JSON.stringify(ADQ_CITY_REPORT_FIELDS),
+      page: 1, page_size: 2000,
+    });
+    return await adqHttpsGet('/v3.0/targeting_tag_reports/get?' + params);
+  }
+
+  function writeCityRecords(accId, accName, rows, regionMap) {
+    let written = 0, updated = 0;
+    const now = Date.now();
+    const upsert = db.prepare(`INSERT INTO shijing_ad(id, data, deleted) VALUES(?, ?, 0)
+                                ON CONFLICT(id) DO UPDATE SET data=excluded.data`);
+    for (const row of rows) {
+      const date = row.date;
+      if (!date) continue;
+      const cityRaw = regionMap[row.city_id] || ('未知(' + row.city_id + ')');
+      const city = normalizeCnCityAdq(cityRaw);
+      const idKey = 'adq_' + accId + '_' + date + '_city_' + encodeURIComponent(city);
+      const rec = {
+        id: idKey,
+        teamId: 'adq_' + accId,
+        ocAccountId: String(accId),
+        ocAccountName: accName,
+        date,
+        sourceType: 'adq',
+        mediaChannel: 'adq',
+        cityName: city,
+        cost: (+row.cost || 0) / 100,
+        addFans: 0,
+        deepConvert: 0, // 定向标签报表接口不返回conversions_count，城市维度暂不拆转化，只拆消耗/曝光/点击
+        impressions: +row.view_count || 0,
+        clicks: +row.valid_click_count || 0,
+        syncedAt: now,
+      };
+      const existing = db.prepare('SELECT 1 FROM shijing_ad WHERE id=?').get(idKey);
+      upsert.run(idKey, JSON.stringify(rec));
+      if (existing) updated++; else written++;
+    }
+    return { written, updated };
+  }
+
   function writeAdRecords(accId, accName, rows) {
     let written = 0, updated = 0;
     const now = Date.now();
@@ -181,7 +269,18 @@ module.exports = function installAdq(app, db, opts) {
     if (!r || r.code !== 0 || !r.data) return { ok: false, error: (r && r.message) || 'fetch failed', raw: r };
     const rows = r.data.list || [];
     const w = writeAdRecords(accountId, (acc && acc.accountName) || accountId, rows);
-    return { ok: true, written: w.written, updated: w.updated, days: rows.length };
+    // 2026-07-18新增：城市维度同区间一次调用即可拿到按天+按城市分组数据，不像本地推需要逐日调用
+    let cityResult = { written: 0, updated: 0 };
+    try {
+      const regionMap = await getAdqRegionMap(tok.accessToken, accountId);
+      const cityR = await fetchCityReport(tok.accessToken, accountId, startDate, endDate);
+      if (cityR && cityR.code === 0 && cityR.data && cityR.data.list) {
+        cityResult = writeCityRecords(accountId, (acc && acc.accountName) || accountId, cityR.data.list, regionMap);
+      }
+    } catch (e) {
+      console.error('[adq] city sync error for account', accountId, e.message);
+    }
+    return { ok: true, written: w.written, updated: w.updated, days: rows.length, cityWritten: cityResult.written, cityUpdated: cityResult.updated };
   }
 
   async function syncAll(startDate, endDate) {
@@ -191,7 +290,11 @@ module.exports = function installAdq(app, db, opts) {
     for (const acc of accounts) {
       try {
         const r = await syncAccount(acc.accountId, startDate, endDate);
-        if (r.ok) { summary.written += r.written; summary.updated += r.updated; }
+        if (r.ok) {
+          summary.written += r.written; summary.updated += r.updated;
+          summary.cityWritten = (summary.cityWritten || 0) + (r.cityWritten || 0);
+          summary.cityUpdated = (summary.cityUpdated || 0) + (r.cityUpdated || 0);
+        }
         else summary.errors.push({ acc: acc.accountId, err: r.error });
       } catch (e) {
         summary.errors.push({ acc: acc.accountId, err: e.message });
