@@ -2059,7 +2059,10 @@ app.get('/api/oceanengine/by-city', v6Required, (req, res) => {
   const cfgMain = db.prepare("SELECT data FROM shijing_config WHERE id=?").get("main");
   const teamConfig = cfgMain ? (JSON.parse(cfgMain.data).teams || {}) : {};
   const cityRows = all.filter(x => {
-    if (x.sourceType !== 'oceanengine') return false;
+    // 2026-07-18修复：此前只认sourceType==='oceanengine'(巨量AD)，本地推(oceanengine_local)
+    // 和腾讯ADQ(adq)的城市维度记录会被这里直接过滤掉，即使已经同步了城市数据，城市看板也看不到。
+    // 现改为三个已知投放来源类型都放行。
+    if (!['oceanengine', 'oceanengine_local', 'adq'].includes(x.sourceType)) return false;
     
     // ★ 修复：如果 cityName 为空，尝试从 teamId 映射到城市
     if (!x.cityName && x.teamId) {

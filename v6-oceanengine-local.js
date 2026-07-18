@@ -162,6 +162,74 @@ module.exports = function installOceanengineLocal(app, db, opts) {
     return await oclHttpsGet('/open_api/v3.0/local/report/account/get/?' + params.toString(), accessToken);
   }
 
+  // ========= 路径3：受众分析接口，拿 城市维度拆分 [2026-07-18新增] =========
+  // GET /open_api/v3.0/local/report/audience/get/，audience_dimension=CITY
+  // 【2026-07-18实测结论】：
+  //   - data_dimension 必须传 'CDP_PROMOTION'（标准投放），传 'AD'（持续投）对我们账户全部返回空列表——
+  //     账户1869842055860442/1865949007916105 实测确认这些账户走的是CDP_PROMOTION投放模式。
+  //   - 返回的 city_name 带行政区后缀（"长沙市"/"深圳市"），province_name同理（"湖南省"）；
+  //     跟现有 shijing_ad 表 cityName 字段口径（"长沙"不带"市"）不一致，写入时需要去掉后缀对齐。
+  //   - 传单日区间(start_date===end_date)也能正常返回当天的城市分布，且各城市 stat_cost 求和
+  //     与账户当天天维度总消耗完全吻合（实测账户1869842055860442的7/16：城市维度求和2999.80，
+  //     与天维度记录的cost=2999.8完全一致），可以按天调用逐日写入。
+  //   - 该接口本身不支持传多天返回多天分组，只返回区间汇总，所以要拿"每天的城市分布"就必须
+  //     逐日单独调用（跟报表接口按天维度批量拉不同，请求次数=账户数×天数，注意频控）。
+  function normalizeCnCity(name) {
+    if (!name) return name;
+    // 去掉行政区后缀，与现有 shijing_ad.cityName 口径对齐（"长沙市"->"长沙"）
+    // 特别地"新界"/"未知"等本身没有后缀的不处理
+    return String(name).replace(/(市|自治州|地区|盟)$/, '');
+  }
+  async function oclFetchCityReport(accessToken, localAccountId, date) {
+    const params = new URLSearchParams({
+      local_account_id: String(localAccountId),
+      start_date: date,
+      end_date: date,
+      audience_dimension: 'CITY',
+      data_dimension: 'CDP_PROMOTION',
+      fields: JSON.stringify(['stat_cost', 'show_cnt', 'click_cnt', 'convert_cnt']),
+      order_type: 'DESC',
+      order_field: 'stat_cost',
+      page: '1', page_size: '50',
+    });
+    return await oclHttpsGet('/open_api/v3.0/local/report/audience/get/?' + params.toString(), accessToken);
+  }
+
+  // 写入城市维度记录（独立于天维度的 oclWriteAdRecords，id 带 _city_ 标记与城市名，
+  // 跟现有巨量AD城市记录的id规则(oc_<accId>_<date>_city_<城市>)保持同构，只是前缀换成ocl）
+  function oclWriteCityRecords(accId, accName, date, cityRows) {
+    let written = 0, updated = 0;
+    const now = Date.now();
+    const upsert = db.prepare(`INSERT INTO shijing_ad(id, data, deleted) VALUES(?, ?, 0)
+                                ON CONFLICT(id) DO UPDATE SET data=excluded.data`);
+    for (const row of cityRows) {
+      const cityRaw = row.city_name || '未知';
+      const city = normalizeCnCity(cityRaw);
+      const f = row.fields || {};
+      const idKey = 'ocl_' + accId + '_' + date + '_city_' + encodeURIComponent(city);
+      const rec = {
+        id: idKey,
+        teamId: 'oceanengine_local_' + accId,
+        ocAccountId: String(accId),
+        ocAccountName: accName,
+        date,
+        sourceType: 'oceanengine_local',
+        mediaChannel: 'oceanengine_local',
+        cityName: city,
+        provinceName: row.province_name || '',
+        cost: +f.stat_cost || 0,
+        impressions: +f.show_cnt || 0,
+        clicks: +f.click_cnt || 0,
+        deepConvert: +f.convert_cnt || 0,
+        syncedAt: now,
+      };
+      const existing = db.prepare('SELECT 1 FROM shijing_ad WHERE id=?').get(idKey);
+      upsert.run(idKey, JSON.stringify(rec));
+      if (existing) updated++; else written++;
+    }
+    return { written, updated };
+  }
+
   // ========= 路径2：线索明细接口，拿 真实留资数(=加粉数)，按天聚合条数 =========
   // POST /open_api/2/tools/clue/life/get/，local_account_ids 数组(<=50)+start_time/end_time(带时分秒)
   // __PATCHED_CLUE_COUNT__ [2026-07-15] 同时统计留资数(byDay)和预付定金数(byDayDeposit)
@@ -288,6 +356,26 @@ module.exports = function installOceanengineLocal(app, db, opts) {
         }
         if (rpt && rpt.code !== 0) summary.errors.push({ acc: acc.accountId, phase: 'report', err: rpt.message });
         await new Promise(res2 => setTimeout(res2, 120));
+
+        // 2026-07-18新增：城市维度只对"有真实消耗"的日期调用(避免0消耗天浪费请求配额)，
+        // 逐日单独调用受众分析接口(该接口本身不支持一次拉多天分组返回)。
+        for (const row of reportRows) {
+          const d = row.stat_time_day || row.date;
+          if (!d || !(+row.stat_cost > 0)) continue;
+          try {
+            const cityRpt = await oclFetchCityReport(tok.accessToken, acc.accountId, d);
+            const cityRows = (cityRpt && cityRpt.code === 0 && cityRpt.data && cityRpt.data.list) || [];
+            if (cityRows.length) {
+              const cw = oclWriteCityRecords(acc.accountId, acc.accountName, d, cityRows);
+              summary.cityWritten = (summary.cityWritten || 0) + cw.written;
+              summary.cityUpdated = (summary.cityUpdated || 0) + cw.updated;
+            }
+            if (cityRpt && cityRpt.code !== 0) summary.errors.push({ acc: acc.accountId, phase: 'city', date: d, err: cityRpt.message });
+          } catch (e) {
+            summary.errors.push({ acc: acc.accountId, phase: 'city', date: d, err: e.message });
+          }
+          await new Promise(res3 => setTimeout(res3, 120));
+        }
       } catch (e) {
         summary.errors.push({ acc: acc.accountId, err: e.message });
       }
