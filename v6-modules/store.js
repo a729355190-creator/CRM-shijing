@@ -267,11 +267,17 @@ window.render_store_walkin = async function (page) {
           <div><label class="lbl">是否操作</label>
             <select class="select" id="wi_op"><option value="是">是</option><option value="否">否</option></select>
           </div>
-          <div><label class="lbl">操作金额（元）</label><input type="number" class="input" id="wi_opamt" min="0" placeholder="如 338"/></div>
+          <div><label class="lbl">操作金额（元）</label>
+            <input type="number" class="input" id="wi_opamt" step="0.01" placeholder="如 338"/>
+            <label style="font-size:12px;color:var(--ink-mute);display:flex;align-items:center;gap:4px;margin-top:4px"><input type="checkbox" id="wi_opamt_neg" style="width:14px;height:14px"/> 本次为退款（记为负数扣减营业额）</label>
+          </div>
           <div><label class="lbl">是否成单（升单）</label>
             <select class="select" id="wi_close"><option value="否">否</option><option value="是">是</option></select>
           </div>
-          <div><label class="lbl">成单金额（元）</label><input type="number" class="input" id="wi_camt" min="0" placeholder="无则填0"/></div>
+          <div><label class="lbl">成单金额（元）</label>
+            <input type="number" class="input" id="wi_camt" step="0.01" placeholder="无则填0"/>
+            <label style="font-size:12px;color:var(--ink-mute);display:flex;align-items:center;gap:4px;margin-top:4px"><input type="checkbox" id="wi_camt_neg" style="width:14px;height:14px"/> 本次为退款（记为负数扣减营业额）</label>
+          </div>
           <div><label class="lbl">业绩贡献人</label><input class="input" id="wi_perf" placeholder="老师/员工姓名" value="${esc(u.position === 'staff' ? u.realName : '')}"/></div>
           <div style="grid-column:1/-1"><label class="lbl">备注</label><textarea class="textarea" id="wi_remark" rows="2" placeholder="顾客情况、特殊需求等"></textarea></div>
           <div style="grid-column:1/-1">
@@ -349,10 +355,12 @@ window.render_store_walkin = async function (page) {
     const isNew = customerType === '新客';
     const source = document.getElementById('wi_source').value;
     const visitNo = isNew ? 1 : +document.getElementById('wi_visit').value;
-    const opAmount = +document.getElementById('wi_opamt').value || 0;
+    let opAmount = +document.getElementById('wi_opamt').value || 0;
+    if (document.getElementById('wi_opamt_neg').checked) opAmount = -Math.abs(opAmount);
     const isOperated = document.getElementById('wi_op').value;
     const isClosed = document.getElementById('wi_close').value;
-    const closedAmount = +document.getElementById('wi_camt').value || 0;
+    let closedAmount = +document.getElementById('wi_camt').value || 0;
+    if (document.getElementById('wi_camt_neg').checked) closedAmount = -Math.abs(closedAmount);
     const performer = document.getElementById('wi_perf').value.trim();
     const remark = document.getElementById('wi_remark').value.trim();
 
@@ -464,8 +472,8 @@ window.render_store_records = async function (page) {
                 <td><b>${esc(s.customerName || '-')}</b></td>
                 <td>${esc(s.customerType || '-')}</td>
                 <td>${esc(s.source || (s.walkIn === false ? '客服邀约' : '-'))}</td>
-                <td style="text-align:right">${(+s.opAmount || 0) ? fmtMoney(s.opAmount) : '-'}</td>
-                <td style="text-align:right;color:var(--danger);font-weight:500">${(+s.closedAmount || 0) ? fmtMoney(s.closedAmount) : '-'}</td>
+                <td style="text-align:right;${(+s.opAmount||0)<0?'color:var(--danger);font-weight:600':''}">${(+s.opAmount || 0) ? fmtMoney(s.opAmount) : '-'}</td>
+                <td style="text-align:right;${(+s.closedAmount||0)<0?'color:var(--danger);font-weight:600':'color:var(--danger);font-weight:500'}">${(+s.closedAmount || 0) ? fmtMoney(s.closedAmount) : '-'}</td>
                 <td>${esc(s.performer || '-')}</td>
                 <td class="muted" style="max-width:200px">${esc(s.remark || '')}</td>
                 <td><button class="btn" style="height:26px;padding:0 8px;font-size:12px" onclick="editStoreRec('${s.id}')">编辑</button></td>
@@ -500,11 +508,17 @@ window.editStoreRec = async function (id) {
         <div><label class="lbl">是否操作</label>
           <select class="select" id="er_op"><option value="是" ${rec.isOperated === '是' ? 'selected' : ''}>是</option><option value="否" ${rec.isOperated === '否' ? 'selected' : ''}>否</option></select>
         </div>
-        <div><label class="lbl">操作金额</label><input type="number" class="input" id="er_opamt" value="${rec.opAmount || 0}"/></div>
+        <div><label class="lbl">操作金额</label>
+          <input type="number" class="input" id="er_opamt" step="0.01" value="${Math.abs(rec.opAmount || 0)}"/>
+          <label style="font-size:12px;color:var(--ink-mute);display:flex;align-items:center;gap:4px;margin-top:4px"><input type="checkbox" id="er_opamt_neg" style="width:14px;height:14px" ${(rec.opAmount||0)<0?'checked':''}/> 本次为退款（记为负数扣减营业额）</label>
+        </div>
         <div><label class="lbl">是否成单</label>
           <select class="select" id="er_close"><option value="否" ${rec.isClosed !== '是' ? 'selected' : ''}>否</option><option value="是" ${rec.isClosed === '是' ? 'selected' : ''}>是</option></select>
         </div>
-        <div><label class="lbl">成单金额</label><input type="number" class="input" id="er_camt" value="${rec.closedAmount || 0}"/></div>
+        <div><label class="lbl">成单金额</label>
+          <input type="number" class="input" id="er_camt" step="0.01" value="${Math.abs(rec.closedAmount || 0)}"/>
+          <label style="font-size:12px;color:var(--ink-mute);display:flex;align-items:center;gap:4px;margin-top:4px"><input type="checkbox" id="er_camt_neg" style="width:14px;height:14px" ${(rec.closedAmount||0)<0?'checked':''}/> 本次为退款（记为负数扣减营业额）</label>
+        </div>
         <div><label class="lbl">贡献人</label><input class="input" id="er_perf" value="${esc(rec.performer || '')}"/></div>
         <div style="grid-column:1/-1"><label class="lbl">备注</label><textarea class="textarea" id="er_remark" rows="3" placeholder="顾客情况、特殊需求等">${esc(rec.remark || '')}</textarea></div>
         <div style="grid-column:1/-1">
@@ -599,9 +613,9 @@ window.editStoreRec = async function (id) {
       phone: document.getElementById('er_phone').value.trim(),
       customerType: document.getElementById('er_type').value,
       isOperated: document.getElementById('er_op').value,
-      opAmount: +document.getElementById('er_opamt').value || 0,
+      opAmount: (document.getElementById('er_opamt_neg').checked ? -1 : 1) * Math.abs(+document.getElementById('er_opamt').value || 0),
       isClosed: document.getElementById('er_close').value,
-      closedAmount: +document.getElementById('er_camt').value || 0,
+      closedAmount: (document.getElementById('er_camt_neg').checked ? -1 : 1) * Math.abs(+document.getElementById('er_camt').value || 0),
       performer: document.getElementById('er_perf').value.trim(),
       remark: document.getElementById('er_remark').value.trim(),
       photos: photoUrls,

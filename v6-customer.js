@@ -65,14 +65,19 @@ module.exports = function (app, db, deps) {
         'ev_visit_' + rec.id, ext, 'arrived', rec.performer || rec.teamId || '',
         'shijing_store', rec.id, JSON.stringify({ performer: rec.performer, customerType: rec.customerType }), at, now);
 
-      // 成交 → deals + dealt 事件 + 贡献者
+      // 成交 → deals + dealt 事件 + 贡献者（含退款：closedAmount<0 记为 kind='refund'，扣减营业额但不改变客户阶段）
       const amount = Number(rec.closedAmount || 0) || 0;
-      if (rec.isClosed === '是' && amount > 0) {
+      if (rec.isClosed === '是' && amount !== 0) {
         const dealId = 'deal_visit_' + rec.id;
-        const project = rec.remark ? String(rec.remark).split('\n')[0].slice(0, 40) : '复购/操作';
-        // 判断是否复购：该客户已有成单则记 repurchase
-        const hasDeal = db.prepare("SELECT COUNT(*) c FROM shijing_deals WHERE external_userid=? AND kind IN ('first_deal','repurchase')").get(ext).c;
-        const dealKind = hasDeal > 0 ? 'repurchase' : 'first_deal';
+        const project = rec.remark ? String(rec.remark).split('\n')[0].slice(0, 40) : (amount < 0 ? '退款' : '复购/操作');
+        let dealKind;
+        if (amount < 0) {
+          dealKind = 'refund';
+        } else {
+          // 判断是否复购：该客户已有成单则记 repurchase
+          const hasDeal = db.prepare("SELECT COUNT(*) c FROM shijing_deals WHERE external_userid=? AND kind IN ('first_deal','repurchase')").get(ext).c;
+          dealKind = hasDeal > 0 ? 'repurchase' : 'first_deal';
+        }
         db.prepare(`INSERT OR REPLACE INTO shijing_deals
           (id, external_userid, kind, project, amount, performer, store_id, dealt_at, source_table, source_id, created_at)
           VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
@@ -80,21 +85,23 @@ module.exports = function (app, db, deps) {
         db.prepare(`INSERT OR REPLACE INTO shijing_customer_events
           (id, external_userid, type, actor, source_table, source_id, payload, occurred_at, created_at)
           VALUES (?,?,?,?,?,?,?,?,?)`).run(
-          'ev_deal_' + rec.id, ext, dealKind === 'repurchase' ? 'repurchase' : 'dealt', rec.performer || rec.teamId || '',
+          'ev_deal_' + rec.id, ext, dealKind === 'refund' ? 'refund' : (dealKind === 'repurchase' ? 'repurchase' : 'dealt'), rec.performer || rec.teamId || '',
           'shijing_store', rec.id, JSON.stringify({ amount, performer: rec.performer, project }), at, now);
-        // 贡献者：门店服务人 + 归属客服
-        if (rec.performer) {
-          db.prepare('INSERT OR REPLACE INTO shijing_deal_contributors (id, deal_id, contributor, role, created_at) VALUES (?,?,?,?,?)')
-            .run('dc_' + dealId + '_store', dealId, rec.performer, dealKind === 'repurchase' ? 'repurchase' : 'store_deal', now);
+        // 贡献者：门店服务人 + 归属客服（退款不记贡献，只扣减金额）
+        if (dealKind !== 'refund') {
+          if (rec.performer) {
+            db.prepare('INSERT OR REPLACE INTO shijing_deal_contributors (id, deal_id, contributor, role, created_at) VALUES (?,?,?,?,?)')
+              .run('dc_' + dealId + '_store', dealId, rec.performer, dealKind === 'repurchase' ? 'repurchase' : 'store_deal', now);
+          }
+          const cust = db.prepare('SELECT follow_userid FROM shijing_wecom_customers WHERE external_userid=?').get(ext);
+          if (cust && cust.follow_userid) {
+            const s = db.prepare('SELECT name FROM shijing_staff WHERE wecomUserid=?').get(cust.follow_userid);
+            db.prepare('INSERT OR REPLACE INTO shijing_deal_contributors (id, deal_id, contributor, role, created_at) VALUES (?,?,?,?,?)')
+              .run('dc_' + dealId + '_cs', dealId, (s && s.name) || cust.follow_userid, 'cs_lead', now);
+          }
+          // 升级客户阶段
+          db.prepare("UPDATE shijing_wecom_customers SET stage=? WHERE external_userid=?").run(dealKind === 'repurchase' ? 'repurchase' : 'dealt', ext);
         }
-        const cust = db.prepare('SELECT follow_userid FROM shijing_wecom_customers WHERE external_userid=?').get(ext);
-        if (cust && cust.follow_userid) {
-          const s = db.prepare('SELECT name FROM shijing_staff WHERE wecomUserid=?').get(cust.follow_userid);
-          db.prepare('INSERT OR REPLACE INTO shijing_deal_contributors (id, deal_id, contributor, role, created_at) VALUES (?,?,?,?,?)')
-            .run('dc_' + dealId + '_cs', dealId, (s && s.name) || cust.follow_userid, 'cs_lead', now);
-        }
-        // 升级客户阶段
-        db.prepare("UPDATE shijing_wecom_customers SET stage=? WHERE external_userid=?").run(dealKind === 'repurchase' ? 'repurchase' : 'dealt', ext);
       } else {
         // 仅到店未成交：阶段至少 arrived
         db.prepare("UPDATE shijing_wecom_customers SET stage='arrived' WHERE external_userid=? AND stage IN ('lead','deposit','scheduled')").run(ext);

@@ -11,11 +11,11 @@
   };
   const STAGE_COLOR = {
     lead: '#8a9099', deposit: '#3370ff', scheduled: '#7a5af0',
-    arrived: '#ff8c1a', dealt: '#2ba471', repurchase: '#e23b3b', lost: '#b0b4ba'
+    arrived: '#ff8c1a', dealt: '#2ba471', repurchase: '#e23b3b', lost: '#b0b4ba', refund: '#e23b3b'
   };
   const EVENT_LABEL = {
     added: '加粉', chat: '沟通', deposit: '缴定金', scheduled: '排期',
-    arrived: '到店', no_show: '爽约', dealt: '成单', repurchase: '复购', lost: '流失'
+    arrived: '到店', no_show: '爽约', dealt: '成单', repurchase: '复购', lost: '流失', refund: '退款'
   };
 
   async function hubApi(path) {
@@ -234,7 +234,7 @@
       const stg = c.stage || 'lead';
       const eventsHtml = (d.events && d.events.length) ? d.events.map(e => {
         let extra = '';
-        try { const p = e.payload ? JSON.parse(e.payload) : null; if (p && p.amount) extra = ` ¥${p.amount}`; if (p && p.project) extra += ' · ' + esc(p.project); } catch {}
+        try { const p = e.payload ? JSON.parse(e.payload) : null; if (p && p.amount) extra = ' ' + fmtMoney(p.amount); if (p && p.project) extra += ' · ' + esc(p.project); } catch {}
         return `<div class="hub-tli">
           <div class="hub-tld" style="background:${STAGE_COLOR[e.type] || '#8a9099'}"></div>
           <div class="hub-tlt">${EVENT_LABEL[e.type] || esc(e.type)}${extra}</div>
@@ -244,8 +244,8 @@
 
       const dealsHtml = (d.deals && d.deals.length) ? d.deals.map(dl =>
         `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f1f3;">
-          <span>${esc(dl.project || dl.kind || '成交')} <span style="font-size:12px;color:#8a9099;">${fmtTs(dl.dealt_at)}</span></span>
-          <span style="font-weight:500;">¥${dl.amount || 0}</span>
+          <span>${esc(dl.kind === 'refund' ? '↩ 退款' : (dl.project || dl.kind || '成交'))} <span style="font-size:12px;color:#8a9099;">${fmtTs(dl.dealt_at)}</span></span>
+          <span style="font-weight:500;${(dl.amount||0)<0?'color:#e23b3b;':''}">${fmtMoney(dl.amount || 0)}</span>
         </div>`).join('') : `<div class="muted" style="color:#8a9099;font-size:13px;">暂无成交记录</div>`;
 
       box.innerHTML = `<div class="hub-inline-body">
@@ -294,7 +294,9 @@
               <div><label style="font-size:12px;color:#646a73;">项目/卡项</label>
                 <input id="ad_project" class="hub-input" style="width:100%;font-size:14px;padding:8px 10px;" placeholder="如：面部护理 5次卡"/></div>
               <div><label style="font-size:12px;color:#646a73;">成交金额</label>
-                <input id="ad_amount" class="hub-input" type="number" style="width:100%;font-size:14px;padding:8px 10px;" placeholder="0=仅到店未成交"/></div>
+                <input id="ad_amount" class="hub-input" type="number" step="0.01" style="width:100%;font-size:14px;padding:8px 10px;" placeholder="0=仅到店未成交"/>
+                <label style="font-size:12px;color:#8a9099;display:flex;align-items:center;gap:4px;margin-top:4px;"><input type="checkbox" id="ad_amount_neg" style="width:14px;height:14px;"> 退款（记为负数扣减营业额）</label>
+              </div>
               <div><label style="font-size:12px;color:#646a73;">服务人</label>
                 <input id="ad_perf" class="hub-input" style="width:100%;font-size:14px;padding:8px 10px;" placeholder="服务人姓名"/></div>
               <div><label style="font-size:12px;color:#646a73;">备注</label>
@@ -307,11 +309,12 @@
             </div>`;
           formBox.querySelector('.hub-do-cancel').onclick = () => { formBox.style.display = 'none'; };
           formBox.querySelector('.hub-do-save').onclick = async () => {
-            const amount = +formBox.querySelector('#ad_amount').value || 0;
+            const isRefund = formBox.querySelector('#ad_amount_neg').checked;
+            const amount = (isRefund ? -1 : 1) * Math.abs(+formBox.querySelector('#ad_amount').value || 0);
             const body = {
               name: c.real_name || c.name, phone: c.phone,
               isOperated: '是', opAmount: 0,
-              isClosed: amount > 0 ? '是' : '否', closedAmount: amount,
+              isClosed: amount !== 0 ? '是' : '否', closedAmount: amount,
               performer: formBox.querySelector('#ad_perf').value.trim(),
               remark: (formBox.querySelector('#ad_project').value.trim() + ' ' + formBox.querySelector('#ad_remark').value.trim()).trim(),
               customerType: '老客',

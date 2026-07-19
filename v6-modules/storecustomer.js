@@ -221,9 +221,13 @@ window.render_store_customers = async function (page) {
       needPhoto = true;
       fields += `
         <div class="sc-fld"><label>是否操作</label><select id="f_op"><option value="是">是</option><option value="否">否</option></select></div>
-        <div class="sc-fld"><label>操作金额</label><input id="f_opamt" inputmode="numeric" value="0"></div>
+        <div class="sc-fld"><label>操作金额</label><input id="f_opamt" type="number" step="0.01" value="0">
+          <label style="font-size:12px;color:#8a9099;display:flex;align-items:center;gap:4px;margin-top:4px"><input type="checkbox" id="f_opamt_neg" style="width:14px;height:14px"> 退款（记为负数扣减营业额）</label>
+        </div>
         <div class="sc-fld"><label>是否成交</label><select id="f_close"><option value="否">否</option><option value="是">是</option></select></div>
-        <div class="sc-fld"><label>成交金额</label><input id="f_closeamt" inputmode="numeric" value="0"></div>
+        <div class="sc-fld"><label>成交金额</label><input id="f_closeamt" type="number" step="0.01" value="0">
+          <label style="font-size:12px;color:#8a9099;display:flex;align-items:center;gap:4px;margin-top:4px"><input type="checkbox" id="f_closeamt_neg" style="width:14px;height:14px"> 退款（记为负数扣减营业额）</label>
+        </div>
         <div class="sc-fld"><label>操作人</label><input id="f_performer" placeholder="选填"></div>
         <div class="sc-fld"><label>备注</label><input id="f_remark" placeholder="选填"></div>
         <div class="sc-fld"><label>操作照片 *（操作前/后对比，必传）</label>
@@ -294,8 +298,10 @@ window.render_store_customers = async function (page) {
         } else {
           url = mode === 'create' ? '/api/customer/store-create' : '/api/customer/store-visit';
           body.customerType = mode === 'create' ? '新客' : '老客';
-          body.isOperated = g('f_op'); body.opAmount = g('f_opamt');
-          body.isClosed = g('f_close'); body.closedAmount = g('f_closeamt');
+          body.isOperated = g('f_op');
+          body.opAmount = (wrap.querySelector('#f_opamt_neg').checked ? -1 : 1) * Math.abs(+g('f_opamt') || 0);
+          body.isClosed = g('f_close');
+          body.closedAmount = (wrap.querySelector('#f_closeamt_neg').checked ? -1 : 1) * Math.abs(+g('f_closeamt') || 0);
           body.performer = g('f_performer'); body.remark = g('f_remark');
           body.photos = photoUrls;
         }

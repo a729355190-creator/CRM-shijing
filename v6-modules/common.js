@@ -25,7 +25,11 @@ window.api = {
 };
 
 // ----- 格式化 -----
-window.fmtMoney = (n) => '¥' + (Number(n) || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+window.fmtMoney = (n) => {
+  const v = Number(n) || 0;
+  const abs = Math.abs(v).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+  return (v < 0 ? '-¥' : '¥') + abs;
+};
 window.fmtNum   = (n) => (Number(n) || 0).toLocaleString('zh-CN');
 window.fmtPct   = (n) => (Number(n) || 0).toFixed(1) + '%';
 window.fmtDate  = (d) => {
