@@ -2166,14 +2166,43 @@ app.get('/api/oceanengine/by-platform', v6Required, (req, res) => {
     }).reduce((s, x) => s + (+x.opAmount || 0) + (+x.closedAmount || 0), 0);
   }
 
+  // ===== 2026-07-19新增：真实归因营业额(目前仅巨量本地推可用) =====
+  // 原理：syncFans()同步企微客户时，已从batch/get_by_user返回的follow_info.state字段
+  // 解析出attribution_channel='oceanengine_local'(state以'lifeca_'开头，经7天时间序列
+  // 比对验证与本地推真实addFans几乎完全吻合)。用shijing_deals(成交明细,含external_userid)
+  // JOIN shijing_wecom_customers.attribution_channel，精确统计"归因到本地推的客户真实成交额"，
+  // 不再靠"消耗占比"去分摊全店营业额(那样算出来的ROI在数学上对所有平台都完全相等，见排查记录)。
+  // 巨量AD/腾讯ADQ的state规律尚未确认，暂时继续用估算分摊，revenueMode字段区分"real"/"estimated"。
+  let realRevenueByPlatform = {};
+  if (user.role === 'hq') {
+    const dealRows = db.prepare(`
+      SELECT d.amount, c.attribution_channel
+      FROM shijing_deals d
+      JOIN shijing_wecom_customers c ON c.external_userid = d.external_userid
+      WHERE c.attribution_channel IS NOT NULL AND c.attribution_channel <> ''
+    `).all();
+    for (const r of dealRows) {
+      realRevenueByPlatform[r.attribution_channel] = (realRevenueByPlatform[r.attribution_channel] || 0) + (+r.amount || 0);
+    }
+  }
+
   const platforms = Object.values(byPlatform).map(p => {
-    const revenue = totalRevenue !== null && totalCost > 0 ? +(totalRevenue * (p.cost / totalCost)).toFixed(2) : null;
+    const hasReal = user.role === 'hq' && Object.prototype.hasOwnProperty.call(realRevenueByPlatform, p.platform);
+    let revenue, revenueMode;
+    if (hasReal) {
+      revenue = +realRevenueByPlatform[p.platform].toFixed(2);
+      revenueMode = 'real';
+    } else {
+      revenue = totalRevenue !== null && totalCost > 0 ? +(totalRevenue * (p.cost / totalCost)).toFixed(2) : null;
+      revenueMode = revenue !== null ? 'estimated' : null;
+    }
     return {
       ...p,
       cpc: p.clicks > 0 ? +(p.cost / p.clicks).toFixed(2) : 0,
       costPerFan: p.addFans > 0 ? +(p.cost / p.addFans).toFixed(2) : 0,
       deepCost: p.deepConvert > 0 ? +(p.cost / p.deepConvert).toFixed(2) : 0,
       revenue,
+      revenueMode,
       roi: revenue !== null && p.cost > 0 ? +(revenue / p.cost).toFixed(2) : null,
     };
   }).sort((a, b) => b.cost - a.cost);

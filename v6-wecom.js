@@ -104,6 +104,13 @@ module.exports = function (app, db, deps) {
   };
   const wayName = w => ADD_WAY[w] || ('渠道' + w);
 
+  // state -> 投放平台归因解析（仅识别已验证规律，未识别格式返回null，不猜测）
+  function parseAttributionChannel(state) {
+    if (!state) return null;
+    if (state.startsWith('lifeca_')) return 'oceanengine_local'; // 巨量本地推(本地生活)获客助手
+    return null; // Lmr*等其他格式尚未确认归属平台，暂不判定
+  }
+
   function httpGet(path) {
     return new Promise((resolve, reject) => {
       https.get({ hostname: 'qyapi.weixin.qq.com', path, timeout: 20000 }, r => {
@@ -163,6 +170,7 @@ module.exports = function (app, db, deps) {
           follow_userid: userid,
           add_time: fi.createtime, add_way: fi.add_way,
           remark: fi.remark, tags: (fi.tags || []).map(t => t.tag_name),
+          state: fi.state || '',
         });
       }
       cursor = r.next_cursor || '';
@@ -183,11 +191,16 @@ module.exports = function (app, db, deps) {
       VALUES(?,?,?,?,?) ON CONFLICT(wecomUserid,date) DO UPDATE SET
       addCount=excluded.addCount, ways=excluded.ways, syncedAt=excluded.syncedAt`);
     const upCust = db.prepare(`INSERT INTO shijing_wecom_customers
-      (external_userid,name,avatar,type,follow_userid,add_time,add_way,remark,tags,lost,updatedAt)
-      VALUES(@external_userid,@name,@avatar,@type,@follow_userid,@add_time,@add_way,@remark,@tags,0,@ts)
+      (external_userid,name,avatar,type,follow_userid,add_time,add_way,remark,tags,lost,updatedAt,
+       attribution_state,attribution_channel,attribution_synced_at)
+      VALUES(@external_userid,@name,@avatar,@type,@follow_userid,@add_time,@add_way,@remark,@tags,0,@ts,
+       @attribution_state,@attribution_channel,@attribution_synced_at)
       ON CONFLICT(external_userid) DO UPDATE SET name=excluded.name, avatar=excluded.avatar,
       follow_userid=excluded.follow_userid, remark=excluded.remark, tags=excluded.tags,
-      lost=0, updatedAt=excluded.updatedAt`);
+      lost=0, updatedAt=excluded.updatedAt,
+      attribution_state=excluded.attribution_state,
+      attribution_channel=CASE WHEN excluded.attribution_channel IS NOT NULL THEN excluded.attribution_channel ELSE shijing_wecom_customers.attribution_channel END,
+      attribution_synced_at=excluded.attribution_synced_at`);
 
     const result = {};
     const now = Date.now();
@@ -209,6 +222,9 @@ module.exports = function (app, db, deps) {
           external_userid: c.external_userid, name: c.name || '', avatar: c.avatar || '',
           type: c.type || 1, follow_userid: c.follow_userid, add_time: c.add_time || 0,
           add_way: c.add_way || 0, remark: c.remark || '', tags: JSON.stringify(c.tags || []), ts: now,
+          attribution_state: c.state || null,
+          attribution_channel: parseAttributionChannel(c.state),
+          attribution_synced_at: c.state ? now : null,
         });
       }
       const tx = db.transaction(() => {
