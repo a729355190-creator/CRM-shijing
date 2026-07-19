@@ -2175,14 +2175,39 @@ app.get('/api/oceanengine/by-platform', v6Required, (req, res) => {
   // 巨量AD/腾讯ADQ的state规律尚未确认，暂时继续用估算分摊，revenueMode字段区分"real"/"estimated"。
   let realRevenueByPlatform = {};
   if (user.role === 'hq') {
+    // 路径A：shijing_deals(客户中心成交明细，字段规整但样本量目前很小)
     const dealRows = db.prepare(`
-      SELECT d.amount, c.attribution_channel
+      SELECT d.amount, d.source_id, c.attribution_channel
       FROM shijing_deals d
       JOIN shijing_wecom_customers c ON c.external_userid = d.external_userid
       WHERE c.attribution_channel IS NOT NULL AND c.attribution_channel <> ''
     `).all();
+    const countedStoreIds = new Set(); // 避免同一条store记录被两条路各算一次
     for (const r of dealRows) {
       realRevenueByPlatform[r.attribution_channel] = (realRevenueByPlatform[r.attribution_channel] || 0) + (+r.amount || 0);
+      if (r.source_id) countedStoreIds.add(r.source_id);
+    }
+    // 路径B：customer_bind(手机号->external_userid)桥接直接关联shijing_store表，
+    // 样本量大得多(store表417条 vs deals表9条)，能更快反映真实归因效果。
+    // 2026-07-19新增：解决"归因机制已上线但deals表数据太少看不到效果"的问题。
+    const bindRows = db.prepare(`SELECT phone, external_userid FROM shijing_customer_bind WHERE external_userid IS NOT NULL AND external_userid<>''`).all();
+    const bindMap = new Map(bindRows.map(b => [b.phone, b.external_userid]));
+    const attrRows = db.prepare(`SELECT external_userid, attribution_channel FROM shijing_wecom_customers WHERE attribution_channel IS NOT NULL AND attribution_channel<>''`).all();
+    const attrMap = new Map(attrRows.map(c => [c.external_userid, c.attribution_channel]));
+    const storeAllForBind = db.prepare('SELECT id, data FROM shijing_store WHERE deleted=0').all().map(r => ({ id: r.id, ...JSON.parse(r.data) }));
+    const phoneKey = p => { p = (p || '').toString().replace(/\D/g, ''); return p.length > 11 ? p.slice(-11) : p; };
+    for (const st of storeAllForBind) {
+      if (countedStoreIds.has(st.id)) continue; // 已被deals路径算过，跳过
+      if (start && st.date < start) continue;
+      if (end && st.date > end) continue;
+      const pk = phoneKey(st.phone);
+      if (!pk) continue;
+      const ext = bindMap.get(pk);
+      if (!ext) continue;
+      const channel = attrMap.get(ext);
+      if (!channel) continue;
+      const amt = (+st.opAmount || 0) + (+st.closedAmount || 0);
+      realRevenueByPlatform[channel] = (realRevenueByPlatform[channel] || 0) + amt;
     }
   }
 
