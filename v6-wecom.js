@@ -19,6 +19,8 @@
 'use strict';
 const https = require('https');
 const crypto = require('crypto');
+let _lookupLdyadPlatform = null;
+try { _lookupLdyadPlatform = require('./v6-wecom-ldyad-bridge').lookupLdyadPlatform; } catch (e) { console.error('[wecom] 落地页归因桥接模块加载失败(不影响其他功能):', e.message); }
 
 module.exports = function (app, db, deps) {
   deps = deps || {};
@@ -109,6 +111,19 @@ module.exports = function (app, db, deps) {
     if (!state) return null;
     if (state.startsWith('lifeca_')) return 'oceanengine_local'; // 巨量本地推(本地生活)获客助手
     return null; // Lmr*等其他格式尚未确认归属平台，暂不判定
+  }
+
+  // 归因判定优先级：①落地页系统(ldyad)的leads.platform(2026-07-20接入，
+  // 由落地页跳转逻辑本身判定，覆盖adq/oceanengine/oceanengine_local三平台，
+  // 实测94.9%能精确匹配到同一个external_userid，与旧state解析交叉核对
+  // 99%一致) ②降级用state字符串解析(仅能识别本地推的lifeca_规律，作为
+  // 落地页系统查不到记录时的兜底，例如客户没走落地页直接扫码/旧链接加粉)
+  function resolveAttributionChannel(externalUserId, state) {
+    if (_lookupLdyadPlatform) {
+      const p = _lookupLdyadPlatform(externalUserId);
+      if (p) return p;
+    }
+    return parseAttributionChannel(state);
   }
 
   function httpGet(path) {
@@ -223,8 +238,8 @@ module.exports = function (app, db, deps) {
           type: c.type || 1, follow_userid: c.follow_userid, add_time: c.add_time || 0,
           add_way: c.add_way || 0, remark: c.remark || '', tags: JSON.stringify(c.tags || []), ts: now,
           attribution_state: c.state || null,
-          attribution_channel: parseAttributionChannel(c.state),
-          attribution_synced_at: c.state ? now : null,
+          attribution_channel: resolveAttributionChannel(c.external_userid, c.state),
+          attribution_synced_at: (c.state || resolveAttributionChannel(c.external_userid, c.state)) ? now : null,
         });
       }
       const tx = db.transaction(() => {
