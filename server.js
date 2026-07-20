@@ -2174,6 +2174,7 @@ app.get('/api/oceanengine/by-platform', v6Required, (req, res) => {
   // 不再靠"消耗占比"去分摊全店营业额(那样算出来的ROI在数学上对所有平台都完全相等，见排查记录)。
   // 巨量AD/腾讯ADQ的state规律尚未确认，暂时继续用估算分摊，revenueMode字段区分"real"/"estimated"。
   let realRevenueByPlatform = {};
+  let realArrivedByPlatform = {}; // 归因平台 -> 精确匹配到的到店/成交记录条数(到店人数)
   if (user.role === 'hq') {
     // 路径A：shijing_deals(客户中心成交明细，字段规整但样本量目前很小)
     const dealRows = db.prepare(`
@@ -2185,6 +2186,7 @@ app.get('/api/oceanengine/by-platform', v6Required, (req, res) => {
     const countedStoreIds = new Set(); // 避免同一条store记录被两条路各算一次
     for (const r of dealRows) {
       realRevenueByPlatform[r.attribution_channel] = (realRevenueByPlatform[r.attribution_channel] || 0) + (+r.amount || 0);
+      realArrivedByPlatform[r.attribution_channel] = (realArrivedByPlatform[r.attribution_channel] || 0) + 1;
       if (r.source_id) countedStoreIds.add(r.source_id);
     }
     // 路径B：customer_bind(手机号->external_userid)桥接直接关联shijing_store表，
@@ -2208,6 +2210,7 @@ app.get('/api/oceanengine/by-platform', v6Required, (req, res) => {
       if (!channel) continue;
       const amt = (+st.opAmount || 0) + (+st.closedAmount || 0);
       realRevenueByPlatform[channel] = (realRevenueByPlatform[channel] || 0) + amt;
+      realArrivedByPlatform[channel] = (realArrivedByPlatform[channel] || 0) + 1;
     }
   }
 
@@ -2221,6 +2224,13 @@ app.get('/api/oceanengine/by-platform', v6Required, (req, res) => {
       revenue = totalRevenue !== null && totalCost > 0 ? +(totalRevenue * (p.cost / totalCost)).toFixed(2) : null;
       revenueMode = revenue !== null ? 'estimated' : null;
     }
+    // 到店人数/到店成本/客单价：仅在有精确归因数据(real模式)时提供，
+    // 估算模式下不提供(店表不记录客户来源平台，无法反推"到店人数"，
+    // 强行用消耗占比分摊到店人数会造成"用估算数字算另一个估算数字"的
+    // 双重失真，不如明确留空，比给一个看起来精确但实际瞎猜的数字更负责)。
+    const arrivedCount = hasReal ? (realArrivedByPlatform[p.platform] || 0) : null;
+    const costPerArrived = hasReal && arrivedCount > 0 ? +(p.cost / arrivedCount).toFixed(2) : null;
+    const avgOrderValue = hasReal && arrivedCount > 0 ? +(revenue / arrivedCount).toFixed(2) : null;
     return {
       ...p,
       cpc: p.clicks > 0 ? +(p.cost / p.clicks).toFixed(2) : 0,
@@ -2229,6 +2239,9 @@ app.get('/api/oceanengine/by-platform', v6Required, (req, res) => {
       revenue,
       revenueMode,
       roi: revenue !== null && p.cost > 0 ? +(revenue / p.cost).toFixed(2) : null,
+      arrivedCount,
+      costPerArrived,
+      avgOrderValue,
     };
   }).sort((a, b) => b.cost - a.cost);
 

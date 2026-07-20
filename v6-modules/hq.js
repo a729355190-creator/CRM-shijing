@@ -239,7 +239,8 @@ async function fillPlatformZone(container, s, e) {
             <th>平台</th><th style="text-align:right">消耗</th><th style="text-align:right">占比</th>
             <th style="text-align:right">加粉</th><th style="text-align:right">加粉成本</th>
             <th style="text-align:right">高潜成交</th><th style="text-align:right">高潜成本</th>
-            <th style="text-align:right">营业额</th><th style="text-align:right">ROI</th>
+            <th style="text-align:right">到店人数</th><th style="text-align:right">到店成本</th>
+            <th style="text-align:right">营业额</th><th style="text-align:right">客单价</th><th style="text-align:right">ROI</th>
           </tr></thead>
           <tbody>${platforms.map(p => `<tr>
               <td><b>${esc(p.label)}</b></td>
@@ -249,11 +250,14 @@ async function fillPlatformZone(container, s, e) {
               <td style="text-align:right">${p.addFans > 0 ? fmtMoney(p.costPerFan) : '-'}</td>
               <td style="text-align:right;color:var(--klein)">${p.deepConvert}</td>
               <td style="text-align:right">${p.deepConvert > 0 ? fmtMoney(p.deepCost) : '-'}</td>
+              <td style="text-align:right">${p.arrivedCount != null ? p.arrivedCount : '-'}</td>
+              <td style="text-align:right">${p.costPerArrived != null ? fmtMoney(p.costPerArrived) : '-'}</td>
               <td style="text-align:right;color:var(--danger)">${p.revenue != null ? fmtMoney(p.revenue) : '-'}${p.revenueMode === 'estimated' ? ' <span style="font-size:10px;color:var(--ink-mute);font-weight:400">(估算)</span>' : (p.revenueMode === 'real' ? ' <span style="font-size:10px;color:var(--success);font-weight:400">(精确)</span>' : '')}</td>
+              <td style="text-align:right">${p.avgOrderValue != null ? fmtMoney(p.avgOrderValue) : '-'}</td>
               <td style="text-align:right;color:var(--klein);font-weight:600">${p.roi != null ? p.roi.toFixed(2) + '×' : '-'}</td>
             </tr>`).join('')}</tbody>
         </table></div>
-        <p class="muted" style="font-size:11px;margin-top:8px">说明：标"精确"的平台已接入真实归因(通过企微客户state字段反查投放来源)；标"估算"的平台归因规律尚未确认，暂按消耗占比对总营业额分摊。</p>
+        <p class="muted" style="font-size:11px;margin-top:8px">说明：标"精确"的平台已接入真实归因(通过落地页系统/企微客户state字段反查投放来源)，到店人数/到店成本/客单价基于同一批精确归因客户统计；标"估算"的平台归因暂未接入，到店人数等字段留空(避免用估算营业额反推造成双重失真)，营业额按消耗占比对总营业额分摊仅供参考。</p>
       </div>`;
   } catch (e) {
     container.innerHTML = '<div class="card"><p style="color:var(--danger)">加载失败：' + e.message + '</p></div>';
