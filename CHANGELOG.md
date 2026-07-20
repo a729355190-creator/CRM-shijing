@@ -3,6 +3,9 @@
 > 记录方式：按日期分组，每条对应一个功能点/修复点。commit哈希可用 `git show <hash>` 查看具体代码改动。
 > 本文件从 2026-07-11 起维护；此前历史改动已按commit记录补齐（2026-07-01 ~ 2026-07-10）。
 
+## 2026-07-20
+- `ba07e23` **接入落地页管理系统(ldyad)作为归因数据源，突破ADQ/巨量AD无法归因的瓶颈**：用户提出"落地页系统记录了每个微信号来自哪个媒体，与CRM顾客微信匹配即可知道成交金额归属"的方案。排查发现独立部署的落地页系统(/opt/ldyad-server)leads表本身记录external_userid+platform(由落地页跳转逻辑判定，非猜测)，实测与CRM shijing_wecom_customers匹配率94.9%(ADQ 83%/巨量AD 100%/本地推97%)，与此前state字符串解析方案交叉核对99%一致。新建`v6-wecom-ldyad-bridge.js`只读连接落地页系统数据库，`v6-wecom.js`同步时优先用该数据源判定归因，查不到才降级用state解析兜底。触发同步后attribution_channel=adq从0→42、oceanengine(巨量AD)从0→69，`/api/oceanengine/by-platform`未改代码自动生效，ADQ营业额转为real精确值(¥1,192,ROI 0.14x)。**已如实验证**：本地推此前约10~18%的加粉数缺口(客户加好友后快速流失导致state/落地页两套方案都拿不到数据)，落地页系统对此净新增贡献为0，是结构性限制非本次方案可解决，已明确告知用户。
+
 ## 2026-07-19
 - `de8c073` **巨量本地推接入真实投手归因，替代"三平台ROI永远相等"的估算算法**：用户发现平台投产对比看板三个平台ROI完全一样，排查确认根因是原分摊公式(总营业额×消耗占比)数学上必然导致ROI趋同，与真实获客效果无关。深挖企微`batch/get_by_user`接口已返回但从未使用的`follow_info.state`字段，发现`lifeca_`前缀(巨量本地推"本地生活"获客助手)与本地推每日真实加粉数经7天时间序列比对几乎完全吻合。改造`syncFans()`采集该字段写入`attribution_channel`；`/api/oceanengine/by-platform`新增`shijing_deals JOIN attribution_channel`精确统计已归因平台的真实营业额(revenueMode='real')，未接入归因的平台(巨量AD/ADQ)继续估算(revenueMode='estimated')并在看板标注区分。ADQ的`Lmr...`格式state来源尚未确认，留待后续排查。
 
